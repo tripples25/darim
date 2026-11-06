@@ -27,7 +27,8 @@ public static class AuthSetup {
    .AddPolicyScheme("Session","Session",o=>o.ForwardDefaultSelector=ctx=>ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase)?"Bearer":"Cookies")
    .AddCookie("Cookies",o=>{o.Cookie.Name="wishlist.session";o.Cookie.HttpOnly=true;o.Cookie.SameSite=SameSiteMode.Lax;o.Cookie.SecurePolicy=b.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;o.ExpireTimeSpan=TimeSpan.FromDays(14);o.SlidingExpiration=true;o.Events.OnRedirectToLogin=ctx=>{ctx.Response.StatusCode=401;return Task.CompletedTask;};o.Events.OnRedirectToAccessDenied=ctx=>{ctx.Response.StatusCode=403;return Task.CompletedTask;};})
    .AddJwtBearer("Bearer",o=>{o.MapInboundClaims=false;o.TokenValidationParameters=new(){ValidateIssuer=true,ValidIssuer="wishlist",ValidateAudience=true,ValidAudience="wishlist-mini",ValidateLifetime=true,ClockSkew=TimeSpan.FromSeconds(15),ValidateIssuerSigningKey=true,IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),ValidAlgorithms=[SecurityAlgorithms.HmacSha256],NameClaimType=ClaimTypes.Name,RoleClaimType=ClaimTypes.Role};});
-  if(TelegramConfigured(b.Configuration))auth.AddOpenIdConnect("Telegram",o=>{
+  if(TelegramConfigured(b.Configuration)) {
+   auth.AddOpenIdConnect("Telegram",o=>{
    o.BackchannelHttpHandler=new HttpClientHandler{AutomaticDecompression=DecompressionMethods.All};
    o.SignInScheme="Cookies";o.Authority="https://oauth.telegram.org";o.ClientId=b.Configuration["Telegram:ClientId"];o.ClientSecret=b.Configuration["Telegram:ClientSecret"];o.ResponseType="code";o.UsePkce=true;o.CallbackPath="/auth/callback";o.Scope.Clear();o.Scope.Add("openid");o.Scope.Add("profile");o.GetClaimsFromUserInfoEndpoint=false;o.SaveTokens=false;o.MapInboundClaims=false;
    o.Events.OnTokenValidated=async ctx=>{
@@ -36,6 +37,10 @@ public static class AuthSetup {
    };
    o.Events.OnRemoteFailure=ctx=>{ctx.HandleResponse();ctx.Response.Redirect("/?login=failed");return Task.CompletedTask;};
   });
+   b.Services.AddSingleton<TelegramOidcStateStore>();
+   b.Services.AddOptions<OpenIdConnectOptions>("Telegram").PostConfigure<TelegramOidcStateStore>((o,store)=>
+    o.StateDataFormat=new CachedOidcStateFormat(o.StateDataFormat,store));
+  }
  }
  public static MiniSessionDto MiniToken(AppUser u,IConfiguration c){var expires=DateTimeOffset.UtcNow.AddHours(1);var jwt=new JwtSecurityToken("wishlist","wishlist-mini",[new(ClaimTypes.NameIdentifier,u.Id.ToString())],expires:expires.UtcDateTime,signingCredentials:new(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(c["Auth:SigningKey"]!)),SecurityAlgorithms.HmacSha256));return new(new JwtSecurityTokenHandler().WriteToken(jwt),expires);}
 }
