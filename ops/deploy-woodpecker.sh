@@ -44,7 +44,7 @@ if [[ -n "$("${compose[@]}" ps --all --quiet app)" ]]; then
   mv "$backup.partial" "$backup"
 fi
 "${compose[@]}" up -d --wait db
-"${compose[@]}" run --rm --no-build migrate
+"${compose[@]}" run --rm migrate
 "${compose[@]}" up -d --no-build app
 REMOTE
 curl --fail --silent --show-error --retry 18 --retry-all-errors --retry-delay 5 --connect-timeout 10 --max-time 20 "$DEPLOY_HEALTH_URL"
