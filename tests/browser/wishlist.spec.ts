@@ -1,6 +1,15 @@
 import {createHmac} from 'node:crypto';
 import {test,expect,Page,Browser} from '@playwright/test';
 async function login(page:Page,name:string){await page.goto('/');await page.getByRole('button',{name,exact:true}).click();await expect(page.getByRole('heading',{name:'Все желания.',exact:true})).toBeVisible();}
+test('organizer can create an invitation with a usage limit',async({page})=>{
+ await login(page,'Юлия');await page.getByRole('button',{name:'Пригласить',exact:true}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByLabel('Количество вступлений')).toHaveValue('one');
+ await dialog.getByLabel('Количество вступлений').selectOption('limited');
+ await dialog.getByLabel('Сколько человек могут вступить').fill('2');
+ await dialog.getByRole('button',{name:'Создать новую ссылку'}).click();
+ await expect(dialog.getByText('Ссылка для 2 вступлений.')).toBeVisible();
+ await expect(dialog.getByLabel('Ссылка на сайт')).toHaveValue(/\?invite=/);
+});
 async function create(page:Page,title:string,occasion='Новый год'){
  await page.getByRole('button',{name:'Добавить желание'}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Что хочется?').fill(title);await dialog.getByLabel('Примерная цена').fill('12000');await dialog.getByLabel('Праздник',{exact:true}).selectOption(occasion);await dialog.getByRole('button',{name:'Сохранить желание'}).click();await expect(dialog).not.toBeVisible();return page.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})});
 }
