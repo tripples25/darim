@@ -31,4 +31,4 @@ steps:
     when:
       - event: deployment
         branch: main
-        environment: production
+        evaluate: 'CI_PIPELINE_DEPLOY_TARGET == "production"'

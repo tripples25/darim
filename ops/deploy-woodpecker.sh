@@ -1,5 +1,8 @@
 #!/bin/sh
 set -eu
+[ "${CI_PIPELINE_EVENT:-}" = deployment ] && \
+  [ "${CI_PIPELINE_DEPLOY_TARGET:-}" = production ] && \
+  [ "${CI_COMMIT_BRANCH:-}" = main ] || { echo 'Only production deployments from main are allowed'; exit 1; }
 : "${SSHPASS:?Configure production_ssh_password for deployment events only}"
 : "${DEPLOY_KNOWN_HOSTS:?Configure production_known_hosts}"
 : "${DEPLOY_HOST:?}" "${DEPLOY_USER:?}" "${DEPLOY_PATH:?}" "${DEPLOY_HEALTH_URL:?}"
