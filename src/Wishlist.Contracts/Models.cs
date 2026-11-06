@@ -8,6 +8,7 @@ public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived
 public record NoticeDto(Guid Id, string Text, DateTimeOffset Created, bool Read);
 public record CreateCompanyInput(string Name);
 public record InviteDto(string Token);
+public record InviteOptions(int? MaxUses);
 public record JoinCompanyInput(string Token);
 public record ProfileInput(string Name, string? Contact);
 public record GiftActionInput(string Action, int? Slots = null, Guid? UserId = null);

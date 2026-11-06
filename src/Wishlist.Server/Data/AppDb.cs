@@ -5,7 +5,7 @@ public class AppUser {
  public Guid Id {get;set;}=Guid.NewGuid(); public long TelegramId {get;set;} public string Name {get;set;}="";
  public string? Username {get;set;} public string? Contact {get;set;} public Guid? CompanyId {get;set;}
 }
-public class Company {public Guid Id {get;set;}=Guid.NewGuid();public string Name {get;set;}="";public Guid OrganizerId {get;set;}public string InviteHash {get;set;}="";}
+public class Company {public Guid Id {get;set;}=Guid.NewGuid();public string Name {get;set;}="";public Guid OrganizerId {get;set;}public string InviteHash {get;set;}="";public int? InviteRemaining {get;set;}}
 public class Notice {public Guid Id {get;set;}=Guid.NewGuid();public Guid UserId {get;set;}public string Text {get;set;}="";public DateTimeOffset Created {get;set;}=DateTimeOffset.UtcNow;public bool Read {get;set;}}
 public class AppDb(DbContextOptions<AppDb> options):DbContext(options) {
  public DbSet<AppUser> Users=>Set<AppUser>(); public DbSet<Company> Companies=>Set<Company>();public DbSet<Gift> Gifts=>Set<Gift>();

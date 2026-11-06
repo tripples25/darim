@@ -8,7 +8,7 @@ public partial class Home {
  bool ready,busy,showArchived;string? error,dialog,inviteLink,miniInviteLink;string tab="all",ownerFilter="",search="",occasion="",availability="",priceFilter="";
  AuthInfoDto? info;MeDto? me;GiftDto[] gifts=[];NoticeDto[] notices=[];GiftDto? selected;
  string editTitle="",editUrl="",editComment="",editOccasion="Без повода",editCustomOccasion="";decimal? editPrice;DateTime? editDate;
- string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="";int splitSlots=2;
+ string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
  readonly string[] demoNames=["Юлия","Макс","Аня","Саша"];
  readonly CancellationTokenSource lifetime=new();DotNetObjectReference<Home>? reference;Task? polling;
  string TabTitle=>tab switch{"mine"=>"Мои желания","giving"=>"Я дарю",_=>"Все желания"};
@@ -57,10 +57,10 @@ public partial class Home {
  async Task LogoutFromProfile(){await CloseDialog();await Logout();}
  async Task OpenProfile(){profileName=me!.User.Name;profileContact=me.User.Contact??"";await Show("profile");}
  async Task SaveProfile()=>await Run(async()=>{await Api.Change("api/profile",new ProfileInput(profileName,profileContact),true);me=await Api.Get<MeDto>("api/me");Snackbar.Add("Профиль сохранён",Severity.Success);},true);
- async Task CreateCompany()=>await Run(async()=>{var invitation=await Api.Post<InviteDto>("api/company",new CreateCompanyInput(companyName));me=await Api.Get<MeDto>("api/me");SetInvite(invitation.Token);await Show("invite");});
+ async Task CreateCompany()=>await Run(async()=>{var invitation=await Api.Post<InviteDto>("api/company",new CreateCompanyInput(companyName));me=await Api.Get<MeDto>("api/me");issuedInviteLimit=1;SetInvite(invitation.Token);await Show("invite");});
  async Task JoinCompany()=>await Run(async()=>{var token=joinToken.Trim();if(Uri.TryCreate(token,UriKind.Absolute,out var uri)){var match=System.Text.RegularExpressions.Regex.Match(uri.Query,@"(?:invite=|startapp=join_)([a-zA-Z0-9_-]+)");token=match.Success?match.Groups[1].Value:token;}await Api.Change("api/company/join",new JoinCompanyInput(token));await JS.InvokeVoidAsync("wishlist.clearInvite");me=await Api.Get<MeDto>("api/me");});
- async Task OpenInvite(){inviteLink=null;miniInviteLink=null;await Show("invite");}
- async Task MakeInvite()=>await Run(async()=>{var invitation=await Api.Post<InviteDto>("api/company/invite");SetInvite(invitation.Token);});
+ async Task OpenInvite(){inviteLink=null;miniInviteLink=null;inviteLimitMode="one";inviteLimit=2;await Show("invite");}
+ async Task MakeInvite()=>await Run(async()=>{int? limit=inviteLimitMode switch{"one"=>1,"limited"=>inviteLimit,_=>null};var invitation=await Api.Post<InviteDto>("api/company/invite",new InviteOptions(limit));issuedInviteLimit=limit;SetInvite(invitation.Token);});
  void SetInvite(string token){inviteLink=Navigation.BaseUri+"?invite="+Uri.EscapeDataString(token);miniInviteLink=string.IsNullOrEmpty(info?.BotUsername)?null:$"https://t.me/{info.BotUsername}?startapp=join_{token}";}
  async Task Copy(string text){try{await JS.InvokeVoidAsync("wishlist.copy",text);Snackbar.Add("Ссылка скопирована",Severity.Success);}catch(JSException){Snackbar.Add("Выделите и скопируйте ссылку вручную.",Severity.Info);}}
  async Task OpenNotices(){await Show("notices");await Run(async()=>{await Api.Change("api/notices/read");});}

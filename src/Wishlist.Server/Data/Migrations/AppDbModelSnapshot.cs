@@ -152,6 +152,9 @@ namespace Wishlist.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                      b.Property<int?>("InviteRemaining")
+                          .HasColumnType("integer");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
