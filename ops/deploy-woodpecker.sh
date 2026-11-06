@@ -10,6 +10,8 @@ set -eu
 case "$CI_COMMIT_SHA" in *[!a-f0-9]*|'') echo 'Invalid commit SHA'; exit 1;; esac
 case "$CI_PIPELINE_NUMBER" in *[!0-9]*|'') echo 'Invalid pipeline number'; exit 1;; esac
 case "$DEPLOY_PATH" in /opt/darim) ;; *) echo 'Unexpected deployment path'; exit 1;; esac
+# Only images produced after a successful verification run can be promoted.
+docker image inspect "darim:$CI_COMMIT_SHA" >/dev/null
 umask 077
 ssh_dir=$(mktemp -d)
 trap 'rm -rf "$ssh_dir"' EXIT

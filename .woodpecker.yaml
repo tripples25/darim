@@ -11,6 +11,9 @@ steps:
       - /run/ci/docker.sock:/var/run/docker.sock
     commands:
       - sh ops/woodpecker-build.sh
+    when:
+      - event: [push, manual]
+        branch: main
 
   - name: deploy-production
     image: docker:27-cli
