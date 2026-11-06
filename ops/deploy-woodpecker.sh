@@ -30,6 +30,7 @@ sha256sum artifacts/deployment.tar.gz | sed 's|artifacts/||' > artifacts/deploym
 sshpass -e scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" artifacts/deployment.tar.gz artifacts/deployment.tar.gz.sha256 "$target:$release/"
 sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$ssh_dir/known_hosts" "$target" "bash -s -- '$DEPLOY_PATH' '$release' '$CI_COMMIT_SHA'" <<'REMOTE'
 set -euo pipefail
+umask 077
 root=$1
 release=$2
 export DARIM_IMAGE="darim:$3"
@@ -46,7 +47,8 @@ if [[ -n "$("${compose[@]}" ps --all --quiet app)" ]]; then
   mv "$backup.partial" "$backup"
 fi
 "${compose[@]}" up -d --wait db
-"${compose[@]}" run --rm migrate
+# Do not let Compose consume the remaining SSH heredoc as container stdin.
+"${compose[@]}" run --rm -T migrate </dev/null
 "${compose[@]}" up -d --no-build app
 REMOTE
 curl --fail --silent --show-error --retry 18 --retry-all-errors --retry-delay 5 --connect-timeout 10 --max-time 20 "$DEPLOY_HEALTH_URL"
