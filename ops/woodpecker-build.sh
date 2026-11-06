@@ -11,6 +11,14 @@ for id in $(docker ps -aq --filter label=darim.ci.verification=true); do
   docker rm -f "$id"
   docker compose -p "darim-ci-$previous" -f compose.dev.yaml down -v --remove-orphans
 done
+# A hard kill may remove the verifier before its database cleanup completes.
+# Discover those orphaned Compose projects independently of the verifier.
+for stale in $(docker ps -a --filter label=com.docker.compose.project \
+  --format '{{.Label "com.docker.compose.project"}}' | sort -u); do
+  case "$stale" in darim-ci-*) previous=${stale#darim-ci-};; *) continue;; esac
+  case "$previous" in *[!0-9]*|'') continue;; esac
+  docker compose -p "$stale" -f compose.dev.yaml down -v --remove-orphans
+done
 cleanup() {
   docker rm -f "$verification" >/dev/null 2>&1 || true
   docker compose -p "$project" -f compose.dev.yaml down -v --remove-orphans
