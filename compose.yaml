@@ -16,7 +16,7 @@ services:
       retries: 20
     networks: [private]
   app:
-    image: darim:local
+    image: ${DARIM_IMAGE:-darim:local}
     build: .
     restart: unless-stopped
     depends_on:
@@ -38,7 +38,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
   migrate:
-    image: darim:local
+    image: ${DARIM_IMAGE:-darim:local}
     profiles: [tools]
     command: [--migrate]
     environment: *app_environment

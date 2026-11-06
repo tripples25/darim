@@ -1,14 +1,30 @@
-name: verify
-on: [push, pull_request]
+name: CI/CD
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to production (main only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: Tests and release publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -22,11 +38,124 @@ jobs:
       - run: npm run test:e2e
         env:
           DARIM_PUBLISHED_TEST: '1'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: verification
+          retention-days: 7
           path: |
-            artifacts/
+            artifacts/*.png
             test-results/
             **/TestResults/
+      - name: Stop development database
+        if: always()
+        run: docker compose -f compose.dev.yaml down -v
+
+  build:
+    name: Build Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build deployable image
+        run: docker build --tag "darim:${GITHUB_SHA}" .
+      - name: Package image and deployment configuration
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          mkdir -p bundle
+          docker save "darim:${GITHUB_SHA}" | gzip > bundle/image.tar.gz
+          cp compose.yaml bundle/
+          cp -r ops bundle/
+          tar -czf deployment.tar.gz -C bundle .
+          sha256sum deployment.tar.gz > deployment.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: deployment-${{ github.sha }}
+          path: deployment.tar.gz*
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy production
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      DEPLOY_HEALTH_URL: ${{ vars.DEPLOY_HEALTH_URL }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Validate deployment settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo 'Deploy is allowed only from main'; exit 1; }
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_HEALTH_URL DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            [[ -n "${!name}" ]] || { echo "Missing production setting: $name (see docs/ci-cd.md)"; exit 1; }
+          done
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ && "$DEPLOY_PATH" != / ]]
+          [[ "$DEPLOY_HEALTH_URL" == https://* ]]
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: deployment-${{ github.sha }}
+      - name: Configure SSH
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Upload and deploy tested image
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check deployment.tar.gz.sha256
+          release="$DEPLOY_PATH/releases/$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh_opts=(-i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15)
+          ssh "${ssh_opts[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$release'"
+          scp "${ssh_opts[@]}" -P "$DEPLOY_PORT" deployment.tar.gz deployment.tar.gz.sha256 "$target:$release/"
+          ssh "${ssh_opts[@]}" -p "$DEPLOY_PORT" "$target" "bash -s -- '$DEPLOY_PATH' '$release' '$GITHUB_SHA'" <<'REMOTE'
+          set -euo pipefail
+          root=$1
+          release=$2
+          export DARIM_IMAGE="darim:$3"
+          test -f "$root/.env" || { echo 'Server .env is missing'; exit 1; }
+          cd "$release"
+          sha256sum --check deployment.tar.gz.sha256
+          tar -xzf deployment.tar.gz
+          docker load -i image.tar.gz
+          compose=(docker compose --project-name darim --env-file "$root/.env" -f "$release/compose.yaml")
+          "${compose[@]}" config --quiet
+          if [[ -n "$("${compose[@]}" ps --all --quiet app)" ]]; then
+            "${compose[@]}" build backup
+            "${compose[@]}" run --rm backup
+          fi
+          "${compose[@]}" up -d --wait db
+          "${compose[@]}" run --rm --no-build migrate
+          "${compose[@]}" up -d --no-build app caddy
+          REMOTE
+      - name: Verify public health endpoint
+        run: curl --fail --silent --show-error --retry 18 --retry-all-errors --retry-delay 5 --connect-timeout 10 --max-time 20 "$DEPLOY_HEALTH_URL"
+      - name: Record successful release
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "printf '%s\n' '$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT' > '$DEPLOY_PATH/current-release'"
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts

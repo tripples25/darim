@@ -47,6 +47,9 @@ dotnet run --project src/Wishlist.Server
 
 ## Развёртывание на VPS
 
+Автоматические тесты, сборка Docker-образа и ручной деплой из GitHub Actions:
+[настройка CI/CD](docs/ci-cd.md). Сервер и production-секреты подключаются отдельно.
+
 Ориентир: Linux, 2 vCPU, 4 ГБ RAM, 40 ГБ SSD, Docker Compose. Windows/IIS не нужны. Разместить проект, например, в `/opt/darim`.
 
 1. Направить DNS домена на VPS. Открыть TCP 80/443 и SSH. База и ASP.NET Core не публикуют порты наружу.
