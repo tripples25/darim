@@ -2,6 +2,7 @@
 set -eu
 export CI=true
 export TESTCONTAINERS_HOST_OVERRIDE=127.0.0.1
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/run/ci/docker.sock
 export PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 export COMPOSE_PROJECT_NAME="darim-ci-${CI_PIPELINE_NUMBER:-local}"
 cleanup() { docker compose -f compose.dev.yaml down -v --remove-orphans; }

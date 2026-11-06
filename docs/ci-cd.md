@@ -1,5 +1,8 @@
 # Тесты, сборка и деплой
 
+Этот вариант GitHub Actions отключён. Активная система —
+[Woodpecker CI](woodpecker.md).
+
 ## Схема
 
 GitHub Actions запускает .NET-тесты (включая PostgreSQL в Testcontainers),

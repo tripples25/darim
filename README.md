@@ -47,8 +47,9 @@ dotnet run --project src/Wishlist.Server
 
 ## Развёртывание на VPS
 
-Автоматические тесты, сборка Docker-образа и ручной деплой из GitHub Actions:
-[настройка CI/CD](docs/ci-cd.md). Сервер и production-секреты подключаются отдельно.
+Автоматические тесты, сборка Docker-образа и ручной деплой выполняются в
+[Woodpecker CI](https://ci.hype-ny.ru/repos/1): [настройка и запуск](docs/woodpecker.md).
+GitHub Actions workflow сохранён как альтернативный вариант, но отключён.
 
 Ориентир: Linux, 2 vCPU, 4 ГБ RAM, 40 ГБ SSD, Docker Compose. Windows/IIS не нужны. Разместить проект, например, в `/opt/darim`.
 
