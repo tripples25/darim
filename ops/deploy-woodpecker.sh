@@ -43,7 +43,7 @@ compose=(docker compose --project-name darim --env-file "$root/.env" -f "$releas
 if [[ -n "$("${compose[@]}" ps --all --quiet app)" ]]; then
   mkdir -p "$root/backups"
   backup="$root/backups/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)-$3.dump"
-  "${compose[@]}" exec -T db pg_dump -U wishlist -d wishlist --format=custom > "$backup.partial"
+  "${compose[@]}" exec -T db pg_dump -U wishlist -d wishlist --format=custom > "$backup.partial" </dev/null
   mv "$backup.partial" "$backup"
 fi
 "${compose[@]}" up -d --wait db
