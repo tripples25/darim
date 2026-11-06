@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode><StaticWebAssetStandaloneHosting>false</StaticWebAssetStandaloneHosting><StaticWebAssetBasePath>/</StaticWebAssetBasePath><TargetFramework>net10.0</TargetFramework>
+    <BlazorWebAssemblyLoadAllGlobalizationData>true</BlazorWebAssemblyLoadAllGlobalizationData><Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OverrideHtmlAssetPlaceholders>false</OverrideHtmlAssetPlaceholders>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.14" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.14" PrivateAssets="all" />
+  </ItemGroup>
+
+<ItemGroup><ProjectReference Include="../Wishlist.Contracts/Wishlist.Contracts.csproj" /><PackageReference Include="MudBlazor" Version="9.12.0" /></ItemGroup></Project>

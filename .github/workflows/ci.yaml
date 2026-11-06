@@ -1,0 +1,32 @@
+name: verify
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: dotnet restore --locked-mode
+      - run: dotnet test Wishlist.slnx --no-restore --logger trx
+      - run: python3 -m unittest discover -s tests/ops -v
+      - run: dotnet publish src/Wishlist.Server -c Release --no-restore -o artifacts/publish
+      - run: docker compose -f compose.dev.yaml up -d --wait
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          DARIM_PUBLISHED_TEST: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification
+          path: |
+            artifacts/
+            test-results/
+            **/TestResults/

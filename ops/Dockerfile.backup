@@ -1,0 +1,4 @@
+FROM postgres:18-alpine
+RUN apk add --no-cache aws-cli coreutils
+COPY ops/backup.sh /usr/local/bin/wishlist-backup
+ENTRYPOINT ["sh", "/usr/local/bin/wishlist-backup"]

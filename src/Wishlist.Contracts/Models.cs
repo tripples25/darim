@@ -1,0 +1,17 @@
+namespace Wishlist.Contracts;
+public record PersonDto(Guid Id, string Name, string? Contact = null);
+public record CompanyDto(Guid Id, string Name, bool IsOrganizer, PersonDto[] Members);
+public record MeDto(PersonDto User, CompanyDto? Company);
+public record GiftInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null, string Occasion = "Без повода", DateOnly? OccasionDate = null);
+public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null);
+public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null);
+public record NoticeDto(Guid Id, string Text, DateTimeOffset Created, bool Read);
+public record CreateCompanyInput(string Name);
+public record InviteDto(string Token);
+public record JoinCompanyInput(string Token);
+public record ProfileInput(string Name, string? Contact);
+public record GiftActionInput(string Action, int? Slots = null, Guid? UserId = null);
+public record MiniLoginInput(string InitData);
+public record MiniSessionDto(string Token, DateTimeOffset Expires);
+public record CsrfDto(string Token);
+public record AuthInfoDto(bool TelegramConfigured, bool DemoEnabled, string? BotUsername = null);

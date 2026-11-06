@@ -1,0 +1,36 @@
+<article class="gift-card @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
+ <div class="gift-art art-@Art"><span aria-hidden="true">@Emoji</span><span class="occasion-tag">@Gift.Details.Occasion</span></div>
+ <div class="gift-content">
+  <div class="gift-eyebrow">@Gift.Owner.Name @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>}</div>
+  <h3>@Gift.Details.Title</h3>
+  <p class="gift-note">@(string.IsNullOrWhiteSpace(Gift.Details.Comment)?"Маленькое желание, большая радость":Gift.Details.Comment)</p>
+  <div class="price-row"><strong>@(Gift.Details.Price is {} price?price.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" ₽":"На ваш выбор")</strong>
+   @if(Gift.Details.Url is {} url){<a href="@url" target="_blank" rel="noopener noreferrer" aria-label="Открыть ссылку на подарок">В магазин <MudIcon Icon="@Icons.Material.Outlined.NorthEast" Size="Size.Small" /></a>}
+  </div>
+  @if(Gift.Archived){<div class="state-line">В архиве @if(P?.Bought==true){<span>· Куплен</span>}</div>}
+  else if(IsOwner){<div class="own-note"><MudIcon Icon="@Icons.Material.Outlined.VisibilityOff" Size="Size.Small" /> Брони скрыты от вас</div>}
+  else if(P?.Mode=="split"){
+   <div class="split-status"><span>Распил · @(P.Bought?"Куплен":$"Занято {P.Taken} из {P.Slots}")</span><span>@(Gift.Details.Price is {} amount?"≈ "+(amount/P.Slots).ToString("N0")+" ₽ / чел.":"Равные доли")</span></div>
+   <div class="share-track" aria-label="Занято @P.Taken из @P.Slots долей">@for(var i=0;i<P.Slots;i++){<span class="@(i<P.Taken?"taken":"")"></span>}</div>
+  }
+  else if(P?.Mode=="solo"){<div class="state-line"><MudIcon Icon="@(P.Bought?Icons.Material.Outlined.CheckCircle:Icons.Material.Outlined.Lock)" Size="Size.Small" /> @(P.IsMine?(P.Bought?"Вы купили этот подарок":"Вы дарите этот подарок"):"Кто-то уже дарит")</div>}
+  <div class="card-actions">
+   @if(!Gift.Archived && IsOwner){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button><button class="icon-button" aria-label="Отправить в архив" title="Отправить в архив" @onclick='()=>OnAction.InvokeAsync("archive")'><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></button>}
+   else if(!Gift.Archived && P?.Mode=="free"){
+    <button class="primary-button" @onclick='()=>OnAction.InvokeAsync("reserve")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" Size="Size.Small" /> Подарю сам</button>
+    <button class="soft-button" @onclick='()=>OnAction.InvokeAsync("split")'>Распилить</button>
+   }
+   else if(!Gift.Archived && P?.Mode=="split" && !P.IsMine && P.Taken<P.Slots){<button class="primary-button full" @onclick='()=>OnAction.InvokeAsync("join")'>Занять одну долю</button>}
+   else if(P?.IsMine==true){<button class="soft-button full" @onclick='()=>OnAction.InvokeAsync("details")'>@(P.Mode=="split"?"Участники и детали":"Детали подарка") <MudIcon Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" /></button>}
+   else if(!Gift.Archived){<span class="quiet-note">Сюрприз уже готовится ✨</span>}
+  </div>
+ </div>
+</article>
+@code {
+ [Parameter,EditorRequired]public GiftDto Gift{get;set;}=default!;
+ [Parameter]public bool IsOwner{get;set;}
+ [Parameter]public EventCallback<string> OnAction{get;set;}
+ ParticipationDto? P=>Gift.Participation;
+ int Art=>Math.Abs(Gift.Id.GetHashCode()%5);
+ string Emoji=>Gift.Details.Title.ToLowerInvariant() switch {var s when s.Contains("коф")=>"☕",var s when s.Contains("науш")=>"🎧",var s when s.Contains("книг")=>"📖",var s when s.Contains("instax")=>"📷",var s when s.Contains("игр")=>"🎲",var s when s.Contains("рюкзак")=>"🎒",var s when s.Contains("концерт")=>"🎟️",var s when s.Contains("керамик")=>"🏺",_=>"🎁"};
+}

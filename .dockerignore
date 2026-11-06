@@ -1,0 +1,10 @@
+**/bin
+**/obj
+.git
+.env
+.env.*
+!.env.example
+node_modules
+artifacts
+TestResults
+.superpowers

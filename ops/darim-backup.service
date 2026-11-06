@@ -1,0 +1,8 @@
+[Unit]
+Description=Darim PostgreSQL off-server backup
+Requires=docker.service
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/darim
+ExecStart=/usr/bin/docker compose run --rm backup

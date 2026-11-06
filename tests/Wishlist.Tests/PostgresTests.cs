@@ -1,0 +1,32 @@
+using Microsoft.EntityFrameworkCore;
+using Testcontainers.PostgreSql;
+using Wishlist.Contracts;
+using Wishlist.Core;
+using Wishlist.Server.Data;
+using Wishlist.Server.Services;
+namespace Wishlist.Tests;
+public class PostgresFixture:IAsyncLifetime {
+ public PostgreSqlContainer Container {get;}=new PostgreSqlBuilder("postgres:18-alpine").Build();
+ public DbContextOptions<AppDb> Options=>new DbContextOptionsBuilder<AppDb>().UseNpgsql(Container.GetConnectionString()).Options;
+ public async Task InitializeAsync(){await Container.StartAsync();await using var db=new AppDb(Options);await db.Database.MigrateAsync();}
+ public Task DisposeAsync()=>Container.DisposeAsync().AsTask();
+}
+[CollectionDefinition("Postgres",DisableParallelization=true)]
+public class PostgresCollection:ICollectionFixture<PostgresFixture>{}
+[Collection("Postgres")]
+public class PostgresTests(PostgresFixture fixture) {
+ async Task<(Guid owner,Guid a,Guid b,Guid c,Guid gift)> Setup(){
+  await using var db=new AppDb(fixture.Options);var company=new Company{Name="Друзья",InviteHash=Guid.NewGuid().ToString()};db.Companies.Add(company);await db.SaveChangesAsync();
+  var users=Enumerable.Range(0,4).Select(_=>new AppUser{Name="Друг",TelegramId=Random.Shared.NextInt64(1,long.MaxValue),CompanyId=company.Id,Contact="@friend"}).ToArray();db.Users.AddRange(users);await db.SaveChangesAsync();
+  var g=Gift.New(company.Id,users[0].Id,new("Кофемолка",Price:12000));db.Gifts.Add(g);await db.SaveChangesAsync();return(users[0].Id,users[1].Id,users[2].Id,users[3].Id,g.Id);
+ }
+ async Task<bool> Try(Guid user,Guid gift,string action,int? slots=null){await using var db=new AppDb(fixture.Options);try{await new GiftService(db).Change(user,gift,action:new(action,slots));return true;}catch(RuleException e)when(e.Status==409){return false;}}
+ [Fact] public async Task ConcurrentSoloReservationsHaveExactlyOneWinner(){var s=await Setup();var results=await Task.WhenAll(Try(s.a,s.gift,"reserve"),Try(s.b,s.gift,"reserve"));Assert.Single(results,x=>x);}
+ [Fact] public async Task LastSplitSlotHasExactlyOneWinner(){var s=await Setup();await Try(s.a,s.gift,"split",2);var results=await Task.WhenAll(Try(s.b,s.gift,"join"),Try(s.c,s.gift,"join"));Assert.Single(results,x=>x);await using var db=new AppDb(fixture.Options);Assert.Equal(2,await db.Shares.CountAsync(x=>x.GiftId==s.gift));}
+ [Fact] public async Task ConcurrentSoloAndSplitAreMutuallyExclusive(){var s=await Setup();var r=await Task.WhenAll(Try(s.a,s.gift,"reserve"),Try(s.b,s.gift,"split",2));Assert.Single(r,x=>x);}
+ [Fact] public async Task ForeignCompanyCannotReadOrMutateGift(){var s=await Setup();await using var db=new AppDb(fixture.Options);var company=new Company{Name="Другие",InviteHash=Guid.NewGuid().ToString()};db.Companies.Add(company);await db.SaveChangesAsync();var u=new AppUser{Name="Чужой",CompanyId=company.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};db.Users.Add(u);await db.SaveChangesAsync();var svc=new GiftService(db);Assert.Empty(await svc.List(u.Id));var ex=await Assert.ThrowsAsync<RuleException>(()=>svc.Change(u.Id,s.gift,action:new("reserve")));Assert.Equal(404,ex.Status);}
+ [Fact] public async Task OwnerIsNeverNotifiedOfReservations(){var s=await Setup();await Try(s.a,s.gift,"split",2);await Try(s.b,s.gift,"join");await using var db=new AppDb(fixture.Options);Assert.False(await db.Notices.AnyAsync(x=>x.UserId==s.owner));Assert.True(await db.Notices.AnyAsync(x=>x.UserId==s.a));}
+ [Fact] public async Task EditingAndArchivingNotifyDonorsAndPreserveHistory(){var s=await Setup();await Try(s.a,s.gift,"reserve");await using(var db=new AppDb(fixture.Options)){var svc=new GiftService(db);await svc.Change(s.owner,s.gift,input:new("Другая модель",Occasion:"Новый год"));await svc.Change(s.owner,s.gift,archive:true);}
+  await using var read=new AppDb(fixture.Options);var dto=Assert.Single(await new GiftService(read).List(s.a));Assert.True(dto.Archived);Assert.Equal("Кофемолка",dto.Original!.Title);Assert.Equal(2,await read.Notices.CountAsync(x=>x.UserId==s.a));}
+ [Fact] public async Task CancellationDeletesSharesAndNotifiesFormerParticipants(){var s=await Setup();await Try(s.a,s.gift,"split",2);await Try(s.b,s.gift,"join");await Try(s.a,s.gift,"cancel");await using var db=new AppDb(fixture.Options);Assert.False(await db.Shares.AnyAsync(x=>x.GiftId==s.gift));Assert.Contains(await db.Notices.Where(x=>x.UserId==s.b).Select(x=>x.Text).ToListAsync(),x=>x.Contains("отменены"));}
+}

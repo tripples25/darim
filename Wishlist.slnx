@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Wishlist.Client/Wishlist.Client.csproj" />
+    <Project Path="src/Wishlist.Contracts/Wishlist.Contracts.csproj" />
+    <Project Path="src/Wishlist.Core/Wishlist.Core.csproj" />
+    <Project Path="src/Wishlist.Server/Wishlist.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Wishlist.Tests/Wishlist.Tests.csproj" />
+  </Folder>
+</Solution>

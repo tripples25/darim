@@ -1,0 +1,12 @@
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor.Services;
+using Wishlist.Client;
+using Wishlist.Client.Services;
+System.Globalization.CultureInfo.DefaultThreadCurrentCulture=System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+System.Globalization.CultureInfo.DefaultThreadCurrentUICulture=System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+var builder=WebAssemblyHostBuilder.CreateDefault(args);
+builder.RootComponents.Add<App>("#app");builder.RootComponents.Add<HeadOutlet>("head::after");
+builder.Services.AddScoped(_=>new HttpClient{BaseAddress=new Uri(builder.HostEnvironment.BaseAddress)});
+builder.Services.AddScoped<Api>();builder.Services.AddMudServices();
+await builder.Build().RunAsync();
