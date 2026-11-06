@@ -1,0 +1,68 @@
+name: darim-ci
+services:
+  server:
+    image: woodpeckerci/woodpecker-server:v3.20.1
+    restart: unless-stopped
+    environment:
+      WOODPECKER_HOST: https://ci.hype-ny.ru
+      WOODPECKER_OPEN: 'false'
+      WOODPECKER_ADMIN: tripples25
+      WOODPECKER_REPO_OWNERS: tripples25
+      WOODPECKER_GITHUB: 'true'
+      WOODPECKER_GITHUB_PUBLIC_ONLY: 'true'
+      WOODPECKER_GITHUB_CLIENT: ${WOODPECKER_GITHUB_CLIENT:?Required}
+      WOODPECKER_GITHUB_SECRET: ${WOODPECKER_GITHUB_SECRET:?Required}
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:?Required}
+    volumes:
+      - server_data:/var/lib/woodpecker
+    networks: [control, edge]
+  worker-docker:
+    image: docker:27-dind
+    restart: unless-stopped
+    privileged: true
+    command: [dockerd, '--host=unix:///run/ci/docker.sock']
+    environment:
+      DOCKER_TLS_CERTDIR: ''
+    mem_limit: 3g
+    volumes:
+      - worker_data:/var/lib/docker
+      - worker_socket:/run/ci
+    networks: [control]
+  agent:
+    image: woodpeckerci/woodpecker-agent:v3.20.1
+    command: agent
+    restart: unless-stopped
+    depends_on: [server, worker-docker]
+    environment:
+      WOODPECKER_SERVER: server:9000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:?Required}
+      WOODPECKER_BACKEND_DOCKER_HOST: unix:///run/ci/docker.sock
+      WOODPECKER_MAX_WORKFLOWS: '1'
+    volumes:
+      - agent_data:/etc/woodpecker
+      - worker_socket:/run/ci
+    networks: [control]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        ipv4_address: 172.28.45.2
+networks:
+  control:
+  edge:
+    name: darim-edge
+    ipam:
+      config: [{subnet: 172.28.45.0/24}]
+volumes:
+  server_data:
+  agent_data:
+  worker_data:
+  worker_socket:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,13 @@
+# Use with compose.yaml; start db, migrate and app only. The CI Caddy owns 80/443.
+services:
+  app:
+    environment:
+      Proxy__Address: 172.28.45.2
+    networks:
+      private:
+      edge:
+        aliases: [darim-app]
+networks:
+  edge:
+    external: true
+    name: darim-edge

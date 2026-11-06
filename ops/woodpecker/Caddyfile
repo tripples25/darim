@@ -1,0 +1,16 @@
+ci.hype-ny.ru {
+    encode zstd gzip
+    reverse_proxy server:8000
+    header -Server
+}
+
+wishes.hype-ny.ru {
+    encode zstd gzip
+    reverse_proxy darim-app:8080
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+        -Server
+    }
+}
