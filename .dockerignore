@@ -7,4 +7,6 @@
 node_modules
 artifacts
 TestResults
+test-results
+playwright-report
 .superpowers

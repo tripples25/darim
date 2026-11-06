@@ -1,0 +1,34 @@
+# Only trusted main commits run on this single-server installation.
+# External PRs require a separate worker host before enabling them.
+when:
+  - event: [push, manual, deployment]
+    branch: main
+
+steps:
+  - name: tests-and-build
+    image: docker:27-cli
+    volumes:
+      - /run/ci/docker.sock:/var/run/docker.sock
+    commands:
+      - sh ops/woodpecker-build.sh
+
+  - name: deploy-production
+    image: docker:27-cli
+    volumes:
+      - /run/ci/docker.sock:/var/run/docker.sock
+    environment:
+      DEPLOY_HOST: 83.141.93.56
+      DEPLOY_USER: root
+      DEPLOY_PATH: /opt/darim
+      DEPLOY_HEALTH_URL: https://wishes.hype-ny.ru/health
+      SSHPASS:
+        from_secret: production_ssh_password
+      DEPLOY_KNOWN_HOSTS:
+        from_secret: production_known_hosts
+    commands:
+      - apk add --no-cache openssh-client sshpass curl
+      - sh ops/deploy-woodpecker.sh
+    when:
+      - event: deployment
+        branch: main
+        environment: production
