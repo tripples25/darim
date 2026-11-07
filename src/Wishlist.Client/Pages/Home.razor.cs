@@ -1,11 +1,12 @@
 using System.Net;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using MudBlazor;
 using Wishlist.Contracts;
 namespace Wishlist.Client.Pages;
 public partial class Home {
- bool ready,busy,showArchived;string? error,dialog,inviteLink,miniInviteLink;string tab="all",ownerFilter="",search="",occasion="",availability="",priceFilter="";
+ bool ready,busy,showArchived,filtersExpanded;string? error,dialog,inviteLink,miniInviteLink;string tab="all",ownerFilter="",search="",occasion="",availability="",priceFilter="";
  AuthInfoDto? info;MeDto? me;GiftDto[] gifts=[];NoticeDto[] notices=[];GiftDto? selected;
  OhmywishesStatusDto? ohmywishes;OhmywishesListDto[]? ohmywishesLists;string ohmywishesSelection="";
  string ohmywishesWebLink="";
@@ -13,16 +14,22 @@ public partial class Home {
  string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
  readonly string[] demoNames=["Юлия","Макс","Аня","Саша"];
  readonly CancellationTokenSource lifetime=new();DotNetObjectReference<Home>? reference;Task? polling;
+ ElementReference searchField;
  string TabTitle=>tab switch{"mine"=>"Мои желания","giving"=>"Я дарю",_=>"Все желания"};
  string TabDescription=>tab switch{"mine"=>"Расскажите, что вас порадует. Остальное — сюрприз.","giving"=>"Ваши будущие сюрпризы и подарки, которые вы дарите вместе.",_=>"То, что порадует ваших близких. Выбирайте и дарите от души."};
+ bool HasFilters=>ownerFilter!=""||!string.IsNullOrWhiteSpace(search)||occasion!=""||availability!=""||priceFilter!="";
+ int ActiveSelectFilters=>(occasion!=""?1:0)+(availability!=""?1:0)+(priceFilter!=""?1:0);
  IEnumerable<string> Occasions=>gifts.Select(g=>g.Details.Occasion).Append("Без повода").Append("День рождения").Append("Новый год").Distinct().Order();
- IEnumerable<GiftDto> Filtered=>gifts.Where(g=>g.Archived==showArchived)
-  .Where(g=>tab!="mine"||g.Owner.Id==me?.User.Id).Where(g=>tab!="giving"||g.Participation?.IsMine==true)
-  .Where(g=>tab!="all"||ownerFilter==""||g.Owner.Id.ToString()==ownerFilter)
-  .Where(g=>occasion==""||g.Details.Occasion==occasion)
-  .Where(g=>search==""||g.Details.Title.Contains(search,StringComparison.OrdinalIgnoreCase)||(g.Details.Comment?.Contains(search,StringComparison.OrdinalIgnoreCase)??false))
-  .Where(g=>priceFilter==""||g.Details.Price is {} p&&p<=decimal.Parse(priceFilter))
-  .Where(g=>tab=="mine"||availability==""||(availability=="free"&&g.Participation?.Mode=="free")||(availability=="split"&&g.Participation is {Mode:"split",Bought:false} s&&s.Taken<s.Slots&&!s.IsMine));
+ IEnumerable<GiftDto> Filtered(){
+  var query=search.Trim();
+  return gifts.Where(g=>g.Archived==showArchived)
+   .Where(g=>tab!="mine"||g.Owner.Id==me?.User.Id).Where(g=>tab!="giving"||g.Participation?.IsMine==true)
+   .Where(g=>tab!="all"||ownerFilter==""||g.Owner.Id.ToString()==ownerFilter)
+   .Where(g=>occasion==""||g.Details.Occasion==occasion)
+   .Where(g=>query==""||g.Details.Title.Contains(query,StringComparison.OrdinalIgnoreCase)||(g.Details.Comment?.Contains(query,StringComparison.OrdinalIgnoreCase)??false))
+   .Where(g=>priceFilter==""||g.Details.Price is {} p&&p<=decimal.Parse(priceFilter))
+   .Where(g=>tab=="mine"||availability==""||(availability=="free"&&g.Participation?.Mode=="free")||(availability=="split"&&g.Participation is {Mode:"split",Bought:false} s&&s.Taken<s.Slots&&!s.IsMine));
+ }
  string DialogTitle=>dialog switch{"editor"=>selected==null?"Новое желание":"Редактировать желание","split"=>"Дарить вместе","details"=>"Ваш подарок","profile"=>"Мой профиль","invite"=>"Пригласить друзей","notices"=>"Уведомления","confirm"=>"Подтвердите действие",_=>""};
  string ConfirmText=>confirmAction switch{"reserve"=>"Забронировать подарок? Остальные увидят, что он занят. Получатель ничего не узнает.","archive"=>"Отправить желание в архив? Дарители получат уведомление, история покупки сохранится.","buy"=>"Подарок уже куплен? После подтверждения снять бронь или выйти из распила будет нельзя.","cancel"=>"Отменить бронь или весь распил? Подарок снова станет свободным, участники получат уведомление.","leave"=>"Освободить свою долю? Остальные участники получат уведомление.",_=>"Продолжить?"};
  static string Initial(string name)=>string.IsNullOrWhiteSpace(name)?"?":name.Trim()[..1].ToUpperInvariant();
@@ -63,8 +70,12 @@ public partial class Home {
  async Task RefreshAfterConflict(){try{await Load();}catch(HttpRequestException){}catch(Services.ApiException){}}
  async Task DemoLogin(int i)=>await Run(async()=>{await Api.Change($"auth/demo/{i}");Api.Clear();me=await Api.Get<MeDto>("api/me");if(joinToken!=""){await Api.Change("api/company/join",new JoinCompanyInput(joinToken));await JS.InvokeVoidAsync("wishlist.clearInvite");joinToken="";me=await Api.Get<MeDto>("api/me");}});
  async Task Logout()=>await Run(async()=>{if(!Api.IsMini)await Api.Change("api/logout");Api.Clear();me=null;gifts=[];notices=[];});
- void SetTab(string value){tab=value;ResetFilters();}
- void ResetFilters(){ownerFilter="";search="";occasion="";availability="";priceFilter="";showArchived=false;}
+ void SetTab(string value){tab=value;showArchived=false;filtersExpanded=false;ResetFilters();}
+ void ResetFilters(){ownerFilter="";search="";occasion="";availability="";priceFilter="";}
+ async Task ClearFilters(MouseEventArgs args){
+  ResetFilters();
+  if(args.Detail==0)await searchField.FocusAsync(preventScroll:true);
+ }
  async Task Show(string value){dialog=value;error=null;StateHasChanged();await JS.InvokeVoidAsync("wishlist.showDialog","app-dialog");}
  async Task CloseDialog(){await JS.InvokeVoidAsync("wishlist.closeDialog","app-dialog");dialog=null;}
  void DialogClosed(){dialog=null;error=null;}

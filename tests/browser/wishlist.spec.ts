@@ -56,6 +56,28 @@ test('editing occasion preserves donor history and sends notification',async({pa
  await owner.getByRole('button',{name:'Редактировать'}).click();await page.getByRole('dialog').getByLabel('Праздник',{exact:true}).selectOption('День рождения');await page.getByRole('button',{name:'Сохранить желание'}).click();await donor.reload();await card.getByRole('button',{name:'Детали подарка'}).click();await expect(donor.getByRole('dialog')).toContainText('Желание изменилось после брони');await donor.getByRole('button',{name:'Закрыть',exact:true}).click();await donor.getByRole('button',{name:'Уведомления',exact:true}).click();await expect(donor.getByRole('dialog')).toContainText('Желание изменено');await ctx.close();
 });
 test('mobile layout has no horizontal overflow',async({page})=>{await page.setViewportSize({width:390,height:844});await login(page,'Юлия');await expect(page.getByRole('button',{name:'Мои желания',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.screenshot({path:'artifacts/mobile.png',fullPage:true});});
+test('mobile filters can be collapsed and cleared without leaving the archive', async ({page}) => {
+ await page.setViewportSize({width:320,height:640});
+ await login(page,'Юлия');
+ const toggle = page.getByRole('button',{name:/^Фильтры/});
+ const price = page.getByLabel('Цена',{exact:true});
+ const archive = page.getByRole('checkbox',{name:'Архив'});
+ const search = page.getByRole('textbox',{name:'Поиск желаний'});
+ await expect(price).toBeHidden();
+ await toggle.click();
+ await price.selectOption('5000');
+ await toggle.click();
+ await expect(toggle).toHaveAttribute('aria-expanded','false');
+ await expect(toggle).toHaveAccessibleName('Фильтры, активно: 1');
+ await archive.check();
+ await search.fill('Несуществующее желание '+Date.now());
+ await expect(page.getByRole('heading',{name:'Ничего не нашлось'})).toBeVisible();
+ await page.getByRole('button',{name:'Сбросить фильтры'}).press('Enter');
+ await expect(archive).toBeChecked();
+ await expect(search).toBeFocused();
+ await expect(search).toHaveValue('');
+ await expect(toggle).toHaveAccessibleName('Фильтры');
+});
 test('desktop wishlist renders without JavaScript errors',async({page})=>{const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page,'Юлия');await expect(page.locator('article').first()).toBeVisible();await page.screenshot({path:'artifacts/desktop.png',fullPage:true});expect(errors).toEqual([]);});
 
 test('Mini App validates signed launch and uses bearer session without cookies',async({page})=>{

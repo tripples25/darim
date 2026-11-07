@@ -73,13 +73,27 @@ else{
       }
      </div>
     }
-    <div class="filter-bar"><label class="search-box"><MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" /><input aria-label="Поиск желаний" placeholder="Поиск желаний" @bind="search" @bind:event="oninput" /></label><div class="select-filters">
-     <select aria-label="Праздник" @bind="occasion"><option value="">Все праздники</option>@foreach(var value in Occasions){<option value="@value">@value</option>}</select>
-     @if(tab!="mine"){<select aria-label="Доступность" @bind="availability"><option value="">Все подарки</option><option value="free">Свободные</option><option value="split">Можно скинуться</option></select>}
-     <select aria-label="Цена" @bind="priceFilter"><option value="">Любая цена</option><option value="5000">До 5 000 ₽</option><option value="10000">До 10 000 ₽</option><option value="20000">До 20 000 ₽</option></select>
-    </div></div>
-    <div class="list-caption"><span>@(showArchived ? "В архиве" : "В списке") <strong>@Filtered.Count()</strong></span><label class="archive-toggle"><input type="checkbox" @bind="showArchived" /> Архив</label></div>
-    @foreach(var group in Filtered.GroupBy(g=>g.Owner.Id)){
+    <div class="filter-bar">
+     <label class="search-box"><MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" /><input @ref="searchField" aria-label="Поиск желаний" placeholder="Поиск желаний" @bind="search" @bind:event="oninput" /></label>
+     <button type="button" class="filter-toggle" aria-label="@(ActiveSelectFilters > 0 ? $"Фильтры, активно: {ActiveSelectFilters}" : "Фильтры")" aria-controls="wish-select-filters" aria-expanded="@(filtersExpanded ? "true" : "false")" @onclick="()=>filtersExpanded=!filtersExpanded">
+      <MudIcon Icon="@Icons.Material.Outlined.Tune" Size="Size.Small" /> Фильтры
+      @if(ActiveSelectFilters > 0){<span class="filter-count" aria-hidden="true">@ActiveSelectFilters</span>}
+     </button>
+     <div id="wish-select-filters" class="select-filters @(filtersExpanded ? "expanded" : "")">
+      <select aria-label="Праздник" @bind="occasion"><option value="">Все праздники</option>@foreach(var value in Occasions){<option value="@value">@value</option>}</select>
+      @if(tab!="mine"){<select aria-label="Доступность" @bind="availability"><option value="">Все подарки</option><option value="free">Свободные</option><option value="split">Можно скинуться</option></select>}
+      <select aria-label="Цена" @bind="priceFilter"><option value="">Любая цена</option><option value="5000">До 5 000 ₽</option><option value="10000">До 10 000 ₽</option><option value="20000">До 20 000 ₽</option></select>
+     </div>
+    </div>
+    var visibleGifts = Filtered().ToArray();
+    <div class="list-caption">
+     <span role="status">@(showArchived ? "В архиве" : "В списке") <strong>@visibleGifts.Length</strong></span>
+     <div class="list-caption-actions">
+      @if(HasFilters && visibleGifts.Length > 0){<button type="button" class="filter-reset" @onclick="ClearFilters">Сбросить фильтры</button>}
+      <label class="archive-toggle"><input type="checkbox" @bind="showArchived" /> Архив</label>
+     </div>
+    </div>
+    @foreach(var group in visibleGifts.GroupBy(g=>g.Owner.Id)){
      var person=group.First().Owner;
      <section class="person-section" @key="person.Id">
       <div class="section-heading">
@@ -92,7 +106,31 @@ else{
       <div class="gift-grid">@foreach(var gift in group){<GiftCard @key="gift.Id" Gift="gift" IsOwner="@(gift.Owner.Id==me.User.Id)" OnAction="action=>GiftAction(gift,action)" />}</div>
      </section>
     }
-    @if(!Filtered.Any()){<div class="empty-state"><span>🌱</span><h2>@(tab=="giving"?"Здесь будут ваши сюрпризы":"Место для новых желаний")</h2><p>@(tab=="giving"?"Выберите подарок в общем списке или присоединитесь к распилу.":"Попробуйте изменить фильтры или добавьте первое желание.")</p><button class="soft-button" @onclick="ResetFilters">Сбросить фильтры</button></div>}
+    @if(visibleGifts.Length == 0){
+     <div class="empty-state wishlist-empty">
+      @if(HasFilters){
+       <MudIcon Icon="@Icons.Material.Outlined.Search" />
+       <h2>Ничего не нашлось</h2>
+       <p>Измените запрос или сбросьте фильтры, чтобы увидеть весь список.</p>
+       <button type="button" class="soft-button" @onclick="ClearFilters">Сбросить фильтры</button>
+      }else if(showArchived){
+       <MudIcon Icon="@Icons.Material.Outlined.Archive" />
+       <h2>Архив пока пуст</h2>
+       <p>Здесь появятся желания, которые отправили в архив.</p>
+       <button type="button" class="soft-button" @onclick="()=>showArchived=false">Показать текущие желания</button>
+      }else if(tab=="giving"){
+       <MudIcon Icon="@Icons.Material.Outlined.Redeem" />
+       <h2>Здесь будут ваши сюрпризы</h2>
+       <p>Выберите подарок в общем списке, чтобы подарить его самому или вместе с друзьями.</p>
+       <button type="button" class="soft-button" @onclick='()=>SetTab("all")'>Посмотреть все желания</button>
+      }else{
+       <MudIcon Icon="@Icons.Material.Outlined.FavoriteBorder" />
+       <h2>@(tab=="mine" ? "У вас пока нет желаний" : "В компании пока нет желаний")</h2>
+       <p>Добавьте то, что вас порадует, и друзья увидят это в списке.</p>
+       <button type="button" class="primary-button" disabled="@busy" @onclick="()=>OpenEditor(null)">Добавить первое желание</button>
+      }
+     </div>
+    }
     <footer class="page-footer"><MudIcon Icon="@Icons.Material.Outlined.VisibilityOff" Size="Size.Small" /> Брони на ваши подарки видны всем, кроме вас. Сюрприз останется сюрпризом.</footer>
    }
   </div>

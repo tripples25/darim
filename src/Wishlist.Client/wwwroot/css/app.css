@@ -299,15 +299,45 @@
 .wishlist-shell .search-box { padding-inline: 6px; color: var(--muted); }
 .wishlist-shell .search-box input { max-width: none; font-weight: 500; }
 .wishlist-shell .select-filters select { border-color: transparent; background: var(--soft); }
+.wishlist-shell .filter-toggle { display: none; }
+.wishlist-shell .filter-count {
+  min-width: 19px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 .wishlist-shell .list-caption { margin: 13px 0 23px; }
 .wishlist-shell .list-caption strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.wishlist-shell .list-caption-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 8px; }
+.wishlist-shell .filter-reset {
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--green);
+  font-weight: 600;
+}
+.wishlist-shell .filter-reset:hover { background: var(--soft); }
 .wishlist-shell .archive-toggle {
-  min-height: 36px;
+  min-height: 44px;
   padding-inline: 8px;
   border-radius: 6px;
   cursor: pointer;
 }
 .wishlist-shell .archive-toggle:hover { background: var(--soft); }
+.wishlist-empty {
+  padding: clamp(28px, 5vw, 46px) 16px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.wishlist-empty > .mud-icon-root { color: var(--green); font-size: 28px; }
+.wishlist-empty h2 { margin: 12px 0 6px; }
+.wishlist-empty p { max-width: 42ch; margin: 0 auto 17px; font-size: 14px; line-height: 1.5; }
+.wishlist-empty .soft-button, .wishlist-empty .primary-button { min-height: 44px; font-size: 13px; }
 .wishlist-shell .section-heading { gap: 11px; margin-bottom: 22px; }
 .wishlist-shell .section-heading .avatar { width: 38px; height: 38px; font-size: 15px; }
 .wishlist-shell .section-heading h2 { font-size: clamp(1.125rem, 2.1vw, 1.5rem); letter-spacing: -.025em; line-height: 1.18; min-width: 0; }
@@ -352,6 +382,23 @@
   .wishlist-cover p { font-size: 14px; margin: 9px 0 14px; }
   .wishlist-shell .cover-add { font-size: 13px; }
   .wishlist-shell .people-filter { margin-bottom: 8px; }
+  .wishlist-shell .search-box { flex: 1 1 0; min-width: 0; }
+  .wishlist-shell .search-box input { min-width: 0; }
+  .wishlist-shell .filter-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 0 8px;
+    border-radius: 7px;
+    background: var(--soft);
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .wishlist-shell .filter-toggle[aria-expanded="true"] { color: var(--green); }
+  .wishlist-shell .select-filters:not(.expanded) { display: none; }
   .wishlist-shell .select-filters { flex-wrap: wrap; gap: 5px; }
   .wishlist-shell .select-filters select { flex: 1 1 auto; padding: 6px; font-size: 12px; }
   .wishlist-shell .list-caption { margin-bottom: 17px; }
