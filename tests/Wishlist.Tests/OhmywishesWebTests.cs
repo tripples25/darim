@@ -75,17 +75,17 @@ public class OhmywishesWebTests
     }
 
     [Fact]
-    public void PilotRequiresBothFlagAndMatchingTelegramId()
+    public void WebApiUsesOnlyTheGlobalFlag()
     {
         OhmywishesOptions Options(string? enabled, string? user) => new(new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?>
             {
                 ["Ohmywishes:WebApiEnabled"] = enabled, ["Ohmywishes:WebApiTelegramId"] = user
             }).Build());
-        Assert.False(Options("false", "42").AllowsWebApi(42));
-        Assert.False(Options("true", null).AllowsWebApi(42));
-        Assert.False(Options("true", "42").AllowsWebApi(43));
-        Assert.True(Options("true", "42").AllowsWebApi(42));
+        Assert.False(Options(null, "42").WebApiEnabled);
+        Assert.False(Options("false", "42").WebApiEnabled);
+        Assert.True(Options("true", null).WebApiEnabled);
+        Assert.True(Options("true", "42").WebApiEnabled);
     }
 
     internal sealed class WebHandler : HttpMessageHandler
@@ -137,19 +137,19 @@ public class OhmywishesWebTests
 public class OhmywishesWebPostgresTests(PostgresFixture fixture)
 {
     [Fact]
-    public async Task OnlyAllowlistedOwnerConnectsAndDisablingPilotHidesImportedGift()
+    public async Task AllCompanyMembersCanConnectAndDisablingWebApiHidesImportedGifts()
     {
         await using var db = new AppDb(fixture.Options);
         var company = new Company { Name = "Pilot", InviteHash = Guid.NewGuid().ToString() };
         var owner = new AppUser { CompanyId = company.Id, TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
         var donor = new AppUser { CompanyId = company.Id, TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
-        db.AddRange(company, owner, donor);
+        var outsider = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+        db.AddRange(company, owner, donor, outsider);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Ohmywishes:WebApiEnabled"] = "true",
-            ["Ohmywishes:WebApiTelegramId"] = owner.TelegramId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ["Ohmywishes:WebApiEnabled"] = "true"
         }).Build();
         var options = new OhmywishesOptions(config);
         using var handler = new OhmywishesWebTests.WebHandler();
@@ -159,12 +159,18 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
             NullLogger<OhmywishesSync>.Instance, new(http));
         var link = $"https://ohmywishes.com/users/dream/lists/{OhmywishesWebTests.List}";
 
-        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(() => sync.ConnectWeb(donor.Id, link, default))).Status);
+        Assert.True((await sync.Status(owner.Id, default)).WebApiEnabled);
+        Assert.True((await sync.Status(donor.Id, default)).WebApiEnabled);
+        Assert.False((await sync.Status(outsider.Id, default)).WebApiEnabled);
+        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(() => sync.ConnectWeb(outsider.Id, link, default))).Status);
         Assert.Equal(0, handler.Requests);
         await sync.ConnectWeb(owner.Id, link, default);
+        await sync.ConnectWeb(donor.Id, link, default);
         await sync.RunDue(default);
         var gifts = new GiftService(db, options);
-        var imported = Assert.Single(await gifts.List(donor.Id));
+        var visible = await gifts.List(donor.Id);
+        Assert.Equal(2, visible.Length);
+        var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
         Assert.True(imported.FromOhmywishes);
         await gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("reserve"));
 
@@ -172,6 +178,8 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
         var requests = handler.Requests;
+        Assert.False((await sync.Status(donor.Id, default)).WebApiEnabled);
+        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(() => sync.ConnectWeb(donor.Id, link, default))).Status);
         await sync.RunDue(default);
         Assert.Equal(requests, handler.Requests);
         Assert.Empty(await gifts.List(donor.Id));

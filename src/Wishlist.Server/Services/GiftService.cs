@@ -33,9 +33,8 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null) {
   await db.SaveChangesAsync();await tx.CommitAsync();return g.View(id,people);
  }
  IQueryable<OhmywishesConnection> DisabledWebSources(){
-  var pilot=options?.WebApiTelegramId;
-  return db.OhmywishesConnections.Where(x=>x.WebApi
-   && (pilot==null || !db.Users.Any(u=>u.Id==x.UserId && u.TelegramId==pilot)));
+  var webEnabled=options?.WebApiEnabled==true;
+  return db.OhmywishesConnections.Where(x=>x.WebApi&&!webEnabled);
  }
  async Task<AppUser> User(Guid id) {var u=await db.Users.SingleOrDefaultAsync(x=>x.Id==id)??throw new RuleException("Войдите снова.",401);if(u.CompanyId==null)throw new RuleException("Сначала вступите в компанию.",403);return u;}
  async Task<Dictionary<Guid,PersonDto>> People(Guid company) => await db.Users.Where(x=>x.CompanyId==company).ToDictionaryAsync(x=>x.Id,x=>new PersonDto(x.Id,x.Name,x.Contact??(x.Username!=null?"@"+x.Username:null)));

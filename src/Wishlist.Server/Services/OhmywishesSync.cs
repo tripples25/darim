@@ -17,8 +17,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     public async Task<OhmywishesStatusDto> Status(Guid userId, CancellationToken ct)
     {
         var connection = await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        var webEnabled = options.WebApiTelegramId is { } pilot && await db.Users.AnyAsync(
-            x => x.Id == userId && x.TelegramId == pilot && x.CompanyId != null, ct);
+        var webEnabled = options.WebApiEnabled && await IsCompanyMember(userId, ct);
         var webConnected = connection?.WebApi == true;
         return new(options.Enabled, webConnected || connection?.ProtectedTokens != null,
             connection is { WebApi: false, ProtectedTokens: null },
@@ -29,9 +28,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 
     public async Task ConnectWeb(Guid userId, string? url, CancellationToken ct)
     {
-        var pilot = options.WebApiTelegramId;
-        if (pilot == null || !await db.Users.AnyAsync(
-            x => x.Id == userId && x.TelegramId == pilot && x.CompanyId != null, ct))
+        if (!options.WebApiEnabled || !await IsCompanyMember(userId, ct))
             throw new RuleException("Подключение недоступно.", 404);
         var link = OhmywishesWeb.ParseLink(url)
             ?? throw new RuleException("Скопируйте ссылку через «Поделиться» в отдельном списке Ohmywishes.", 400);
@@ -45,7 +42,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
-        if (!options.AllowsWebApi(user.TelegramId)) throw new RuleException("Подключение недоступно.", 404);
+        if (!options.WebApiEnabled) throw new RuleException("Подключение недоступно.", 404);
         var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
         if (connection?.Revision != previous?.Revision)
             throw new RuleException("Подключение изменилось. Попробуйте ещё раз.");
@@ -174,11 +171,10 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     public async Task RunDue(CancellationToken ct)
     {
         var mcpEnabled = options.Enabled;
-        var pilot = options.WebApiTelegramId;
-        if (!mcpEnabled && pilot == null) return;
+        var webEnabled = options.WebApiEnabled;
+        if (!mcpEnabled && !webEnabled) return;
         var due = await db.OhmywishesConnections.AsNoTracking()
-            .Where(x => (mcpEnabled && !x.WebApi) || (x.WebApi && pilot != null
-                && db.Users.Any(user => user.Id == x.UserId && user.TelegramId == pilot)))
+            .Where(x => x.WebApi ? webEnabled : mcpEnabled)
             .Where(x => x.NextSync <= DateTimeOffset.UtcNow).OrderBy(x => x.NextSync).Take(20)
             .Select(x => new { x.UserId, x.Revision }).ToListAsync(ct);
         foreach (var entry in due)
@@ -213,7 +209,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     private async Task<SyncJob?> Claim(Guid userId, Guid revision, bool scheduled, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var user = await LockCompanyMember(userId, ct);
+        await LockCompanyMember(userId, ct);
         var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
         if (connection?.Revision != revision ||
             (scheduled && (connection.NextSync == null || connection.NextSync > DateTimeOffset.UtcNow)))
@@ -221,7 +217,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 
         if (connection.WebApi)
         {
-            if (!scheduled || !options.AllowsWebApi(user.TelegramId)) return null;
+            if (!scheduled || !options.WebApiEnabled) return null;
             var shareToken = connection.ProtectedTokens == null ? null : webLinkProtector.Unprotect(connection.ProtectedTokens);
             connection.NextSync = DateTimeOffset.UtcNow.AddMinutes(Math.Max(3, options.Interval.TotalMinutes));
             await db.SaveChangesAsync(ct);
@@ -267,7 +263,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         var user = await LockCompanyMember(userId, ct);
         var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
         if (connection?.Revision != revision ||
-            (connection.WebApi ? !options.AllowsWebApi(user.TelegramId) : connection.ProtectedTokens == null)) return;
+            (connection.WebApi ? !options.WebApiEnabled : connection.ProtectedTokens == null)) return;
 
         var mapped = snapshot.ToDictionary(item => Convert.ToHexString(
             SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, item.Key }))), item => item.Value);
@@ -323,6 +319,9 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         connection.Stale = true;
         await HideGifts(connection.UserId, ct);
     }
+
+    private Task<bool> IsCompanyMember(Guid userId, CancellationToken ct) =>
+        db.Users.AnyAsync(user => user.Id == userId && user.CompanyId != null, ct);
 
     private async Task<AppUser> LockCompanyMember(Guid userId, CancellationToken ct)
     {

@@ -20,9 +20,7 @@ public sealed class OhmywishesOptions(IConfiguration configuration)
     public string? ClientSecret => configuration["Ohmywishes:ClientSecret"];
     public string? RedirectUri => configuration["Ohmywishes:RedirectUri"];
     public string TokenAuthMethod => configuration["Ohmywishes:TokenAuthMethod"] ?? "client_secret_basic";
-    public long? WebApiTelegramId => bool.TryParse(configuration["Ohmywishes:WebApiEnabled"], out var enabled) && enabled
-        && long.TryParse(configuration["Ohmywishes:WebApiTelegramId"], out var id) && id > 0 ? id : null;
-    public bool AllowsWebApi(long telegramId) => WebApiTelegramId == telegramId;
+    public bool WebApiEnabled => bool.TryParse(configuration["Ohmywishes:WebApiEnabled"], out var enabled) && enabled;
     public TimeSpan Interval => TimeSpan.FromMinutes(Math.Max(1, configuration.GetValue("Ohmywishes:IntervalMinutes", 30)));
     public bool Enabled => !string.IsNullOrWhiteSpace(ClientId) && Https(RedirectUri)
         && new Uri(RedirectUri!).AbsolutePath == CallbackPath

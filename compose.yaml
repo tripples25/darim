@@ -35,7 +35,6 @@ services:
       Ohmywishes__RedirectUri: ${OHMYWISHES_REDIRECT_URI:-}
       Ohmywishes__IntervalMinutes: ${OHMYWISHES_INTERVAL_MINUTES:-30}
       Ohmywishes__WebApiEnabled: ${OHMYWISHES_WEB_API_ENABLED:-false}
-      Ohmywishes__WebApiTelegramId: ${OHMYWISHES_WEB_API_TELEGRAM_ID:-}
       DataProtection__Path: /keys
       Proxy__Address: 172.28.44.2
       AllowedHosts: ${DOMAIN:?Set DOMAIN}
