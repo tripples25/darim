@@ -113,9 +113,17 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
     private async Task<JsonElement?> Get(string path, CancellationToken ct)
     {
-        using var response = await http.GetAsync($"{Origin}/api/v3/{path}", ct);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{Origin}/api/v3/{path}");
+        request.Headers.UserAgent.ParseAdd("Darim/1.0 (+https://wishes.hype-ny.ru)");
+        using var response = await http.SendAsync(request, ct);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+        {
+            // An HTML gateway denial says nothing about the list's sharing permissions.
+            if (response.StatusCode == HttpStatusCode.Forbidden &&
+                string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase))
+                response.EnsureSuccessStatusCode();
             return null;
+        }
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<JsonElement>(ct);
     }

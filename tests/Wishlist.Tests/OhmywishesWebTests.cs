@@ -64,6 +64,17 @@ public class OhmywishesWebTests
     }
 
     [Fact]
+    public async Task HtmlGatewayDenialIsNotTreatedAsRevokedListAccess()
+    {
+        using var handler = new WebHandler { GatewayDenies = true };
+        using var http = new HttpClient(handler);
+        var web = new OhmywishesWeb(http);
+        var link = OhmywishesWeb.ParseLink($"https://ohmywishes.com/users/dream/lists/{Shared}")!;
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => web.Resolve(link, default));
+        Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+    }
+
+    [Fact]
     public void PilotRequiresBothFlagAndMatchingTelegramId()
     {
         OhmywishesOptions Options(string? enabled, string? user) => new(new ConfigurationBuilder().AddInMemoryCollection(
@@ -82,6 +93,7 @@ public class OhmywishesWebTests
         public string Visibility { get; set; } = "public";
         public bool ProfilePrivate { get; set; }
         public bool ListRequiresSignIn { get; set; }
+        public bool GatewayDenies { get; set; }
         public int Requests { get; private set; }
         public int GlobalWishRequests { get; private set; }
 
@@ -92,6 +104,12 @@ public class OhmywishesWebTests
             Assert.Equal("ohmywishes.com", request.RequestUri!.Host);
             Assert.Null(request.Headers.Authorization);
             Assert.False(request.Headers.Contains("Cookie"));
+            if (GatewayDenies)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("<html>Forbidden</html>", System.Text.Encoding.UTF8, "text/html")
+                });
+            Assert.StartsWith("Darim/1.0", request.Headers.UserAgent.ToString());
             var root = $"/api/v3/users/{Account}/wish-lists/{List}";
             var sharedRoot = $"/api/v3/users/{Account}/wish-lists/{Shared}";
             if (ListRequiresSignIn && (request.RequestUri.AbsolutePath == root || request.RequestUri.AbsolutePath == sharedRoot))
