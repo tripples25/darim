@@ -14,6 +14,7 @@ using Wishlist.Server.Services;
 var builder=WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDb>(o=>o.UseNpgsql(builder.Configuration.GetConnectionString("Database")??throw new InvalidOperationException("Set ConnectionStrings__Database.")));
 builder.Services.AddScoped<GiftService>();builder.Services.AddScoped<AccountService>();
+builder.Services.AddSingleton<DarimMetrics>();
 builder.Services.AddSingleton<OhmywishesOptions>();
 builder.Services.AddScoped<OhmywishesSync>();
 builder.Services.AddHostedService<OhmywishesWorker>();
@@ -43,10 +44,17 @@ if (args.Contains("--migrate"))
 var demo=app.Environment.IsDevelopment()&&app.Configuration.GetValue<bool>("Demo:Enabled");
 if(demo){await using var scope=app.Services.CreateAsyncScope();var db=scope.ServiceProvider.GetRequiredService<AppDb>();await db.Database.MigrateAsync();await DemoData.Seed(db);}
 app.UseForwardedHeaders();
+var metrics = app.Services.GetRequiredService<DarimMetrics>();
 var requestLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Darim.Http");
 app.Use(async (context, next) =>
 {
     var path = context.Request.Path;
+    if (path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) || path.Equals("/metrics/", StringComparison.OrdinalIgnoreCase))
+    {
+        await metrics.Scrape(context);
+        return;
+    }
+
     var health = path.Equals("/health", StringComparison.OrdinalIgnoreCase);
     if (!health && !path.StartsWithSegments("/api") && !path.StartsWithSegments("/auth") && !path.Equals("/logout"))
     {
@@ -68,13 +76,15 @@ app.Use(async (context, next) =>
     }
     finally
     {
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
+        if (route is null || !route.StartsWith('/')) route = health ? "/health" : "<unmatched>";
+        metrics.RecordRequest(context.Request.Method, route, status, elapsed.TotalSeconds);
         if (!health || status >= 400)
         {
-            var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText
-                ?? (health ? "/health" : "<unmatched>");
             var level = status >= 500 ? LogLevel.Error : status == 429 ? LogLevel.Warning : LogLevel.Information;
             requestLogger.Log(level, "{Method} {Route} responded {StatusCode} in {ElapsedMs:F1} ms (request {RequestId})",
-                context.Request.Method, route, status, Stopwatch.GetElapsedTime(started).TotalMilliseconds, context.TraceIdentifier);
+                context.Request.Method, route, status, elapsed.TotalMilliseconds, context.TraceIdentifier);
         }
     }
 });

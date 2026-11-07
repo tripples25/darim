@@ -9,7 +9,8 @@ using Wishlist.Server.Data;
 namespace Wishlist.Server.Services;
 
 public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, OhmywishesOAuth oauth,
-    OhmywishesMcp mcp, IDataProtectionProvider protection, ILogger<OhmywishesSync> logger, OhmywishesWeb web)
+    OhmywishesMcp mcp, IDataProtectionProvider protection, ILogger<OhmywishesSync> logger, OhmywishesWeb web,
+    DarimMetrics? metrics = null)
 {
     private readonly IDataProtector tokenProtector = protection.CreateProtector("ohmywishes.tokens.v1");
     private readonly IDataProtector webLinkProtector = protection.CreateProtector("ohmywishes.share-link.v1");
@@ -190,14 +191,16 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                     var snapshot = job.WebApi
                         ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token, job.Access)
                         : await mcp.Snapshot(job.Access!, job.ListId, deadline.Token);
-                    await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, deadline.Token);
+                    if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, deadline.Token))
+                        metrics?.RecordSync(DarimMetrics.SyncOutcome.Applied);
                 }
             }
             catch (Exception ex) when (IsProviderFailure(ex, ct))
             {
+                var reconnect = ex is OhmywishesAccessException or CryptographicException;
+                metrics?.RecordSync(reconnect ? DarimMetrics.SyncOutcome.ReconnectRequired : DarimMetrics.SyncOutcome.ProviderError);
                 logger.LogWarning("Ohmywishes refresh failed for user {UserId} ({Failure}).", entry.UserId, ex.GetType().Name);
-                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens,
-                    ex is OhmywishesAccessException or CryptographicException, ct);
+                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens, reconnect, ct);
             }
             finally
             {
@@ -246,6 +249,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             await Invalidate(connection, ct);
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
+            if (scheduled) metrics?.RecordSync(DarimMetrics.SyncOutcome.ReconnectRequired);
             db.ChangeTracker.Clear();
             return null;
         }
@@ -257,13 +261,13 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return job;
     }
 
-    private async Task Apply(Guid userId, Guid revision, string accountId, Dictionary<string, GiftInput> snapshot, CancellationToken ct)
+    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, GiftInput> snapshot, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
         var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
         if (connection?.Revision != revision ||
-            (connection.WebApi ? !options.WebApiEnabled : connection.ProtectedTokens == null)) return;
+            (connection.WebApi ? !options.WebApiEnabled : connection.ProtectedTokens == null)) return false;
 
         var mapped = snapshot.ToDictionary(item => Convert.ToHexString(
             SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, item.Key }))), item => item.Value);
@@ -293,6 +297,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         connection.Stale = false;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        return true;
     }
 
     private async Task RecordFailure(Guid userId, Guid revision, string? usedTokens, bool reconnect, CancellationToken ct)
@@ -377,7 +382,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 }
 
 public sealed class OhmywishesWorker(IServiceScopeFactory scopes,
-    ILogger<OhmywishesWorker> logger) : BackgroundService
+    ILogger<OhmywishesWorker> logger, DarimMetrics metrics) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -391,6 +396,7 @@ public sealed class OhmywishesWorker(IServiceScopeFactory scopes,
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
+                metrics.RecordSync(DarimMetrics.SyncOutcome.WorkerError);
                 logger.LogWarning("Ohmywishes worker could not run ({Failure}).", ex.GetType().Name);
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken));

@@ -1,6 +1,12 @@
 {$DOMAIN} {
     encode zstd gzip
-    reverse_proxy app:8080
+    @metrics path /metrics /metrics/*
+    handle @metrics {
+        respond 404
+    }
+    handle {
+        reverse_proxy app:8080
+    }
     header {
         X-Content-Type-Options nosniff
         Referrer-Policy strict-origin-when-cross-origin

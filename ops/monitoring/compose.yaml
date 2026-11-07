@@ -1,0 +1,45 @@
+name: darim-monitoring
+services:
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+      - type: bind
+        source: ${DARIM_PROMETHEUS_TARGETS_FILE:-./targets.yml}
+        target: /etc/prometheus/targets.yml
+        read_only: true
+        bind: {create_host_path: false}
+    secrets: [scrape_token]
+    networks: [default, darim]
+  grafana:
+    image: grafana/grafana:13.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    ports:
+      - '127.0.0.1:${DARIM_GRAFANA_PORT:-3000}:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
+    secrets: [grafana_password]
+    depends_on: [prometheus]
+networks:
+  darim:
+    external: true
+    name: ${DARIM_MONITORING_NETWORK:-darim_private}
+secrets:
+  scrape_token:
+    file: ${DARIM_SCRAPE_TOKEN_FILE:?Set DARIM_SCRAPE_TOKEN_FILE}
+  grafana_password:
+    file: ${DARIM_GRAFANA_PASSWORD_FILE:?Set DARIM_GRAFANA_PASSWORD_FILE}
+volumes:
+  prometheus-data:
+  grafana-data:

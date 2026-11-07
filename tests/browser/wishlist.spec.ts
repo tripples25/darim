@@ -11,8 +11,35 @@ test('organizer can create an invitation with a usage limit',async({page})=>{
  await expect(dialog.getByLabel('Ссылка на сайт')).toHaveValue(/\?invite=/);
 });
 async function create(page:Page,title:string,occasion='Новый год'){
- await page.getByRole('button',{name:'Добавить желание'}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Что хочется?').fill(title);await dialog.getByLabel('Примерная цена').fill('12000');await dialog.getByLabel('Праздник',{exact:true}).selectOption(occasion);await dialog.getByRole('button',{name:'Сохранить желание'}).click();await expect(dialog).not.toBeVisible();return page.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})});
+ await page.getByRole('button',{name:'Добавить желание'}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Что хочется?').fill(title);await dialog.getByText('Дополнительные параметры',{exact:true}).click();await dialog.getByLabel('Примерная цена').fill('12000');await dialog.getByLabel('Праздник',{exact:true}).selectOption(occasion);await dialog.getByRole('button',{name:'Сохранить желание'}).click();await expect(dialog).not.toBeVisible();return page.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})});
 }
+test('gift editor is centered and keeps optional values when collapsed',async({page})=>{
+ const viewport={width:390,height:740};
+ await page.setViewportSize(viewport);
+ await login(page,'Юлия');
+ await page.getByRole('button',{name:'Добавить желание'}).click();
+ const dialog=page.getByRole('dialog',{name:'Новое желание'});
+ await expect(dialog).toBeVisible();
+ const box=(await dialog.boundingBox())!;
+ expect(Math.abs(box.x+box.width/2-viewport.width/2)).toBeLessThan(2);
+ expect(Math.abs(box.y+box.height/2-viewport.height/2)).toBeLessThan(2);
+ const price=dialog.getByLabel('Примерная цена');
+ const extras=dialog.locator('summary').filter({hasText:'Дополнительные параметры'});
+ const title='Компактная форма '+Date.now();
+ await expect(price).toBeHidden();
+ await dialog.getByLabel('Что хочется?').fill(title);
+ await extras.press('Enter');
+ await price.fill('-1');
+ await extras.press('Enter');
+ await dialog.getByRole('button',{name:'Сохранить желание'}).click();
+ await expect(price).toBeVisible();
+ await price.fill('340');
+ await extras.press('Enter');
+ await dialog.getByRole('button',{name:'Сохранить желание'}).click();
+ await expect(dialog).toBeHidden();
+ const gifts=await (await page.request.get('/api/gifts')).json();
+ expect(gifts.find((gift:any)=>gift.details.title===title)?.details.price).toBe(340);
+});
 test('create, filter, reserve and hide reservation from recipient',async({page,browser})=>{
  await login(page,'Юлия');const title='Книга для проверки '+Date.now();const ownerCard=await create(page,title);await expect(ownerCard).toContainText('Брони скрыты от вас');await page.getByLabel('Праздник',{exact:true}).selectOption('Новый год');await expect(ownerCard).toBeVisible();
  const ctx=await browser.newContext();const donor=await ctx.newPage();await login(donor,'Макс');const card=donor.locator('article').filter({has:donor.getByRole('heading',{name:title,exact:true})});await card.getByRole('button',{name:'Подарю сам'}).click();await donor.getByRole('dialog').getByRole('button',{name:'Подтвердить'}).click();await expect(card).toContainText('Вы дарите этот подарок');await page.reload();await expect(ownerCard).toContainText('Брони скрыты от вас');await expect(ownerCard).not.toContainText('Кто-то уже дарит');

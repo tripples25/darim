@@ -6,6 +6,10 @@ https://ci.hype-ny.ru {
 
 https://wishes.hype-ny.ru {
     encode zstd gzip
+    @metrics path /metrics /metrics/*
+    handle @metrics {
+        respond 404
+    }
     handle /deployment.json {
         header Cache-Control "no-store"
         root * /dynamic

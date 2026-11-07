@@ -1,0 +1,6 @@
+# Merge with compose.yaml to enable scraping for the standard Docker Compose installation.
+services:
+  app:
+    environment:
+      Monitoring__Token: ${DARIM_MONITORING_TOKEN:?Set DARIM_MONITORING_TOKEN}
+      AllowedHosts: ${DOMAIN:?Set DOMAIN};app

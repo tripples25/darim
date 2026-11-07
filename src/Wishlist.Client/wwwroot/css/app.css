@@ -362,3 +362,52 @@
 @media (max-width: 360px) {
   .wishlist-shell .invite-button { width: 44px; padding: 0; gap: 0; font-size: 0; }
 }
+
+#app-dialog {
+  --dialog-width: 490px;
+  --dialog-top: calc(max(var(--tg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 12px);
+  --dialog-bottom: calc(max(var(--tg-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 12px);
+  --dialog-left: calc(env(safe-area-inset-left, 0px) + 12px);
+  --dialog-right: calc(env(safe-area-inset-right, 0px) + 12px);
+  position: fixed;
+  inset: var(--dialog-top) var(--dialog-right) var(--dialog-bottom) var(--dialog-left);
+  margin: auto;
+  inline-size: min(var(--dialog-width), calc(100% - var(--dialog-left) - var(--dialog-right)));
+  block-size: fit-content;
+  max-block-size: calc(100dvh - var(--dialog-top) - var(--dialog-bottom));
+  overscroll-behavior: contain;
+}
+
+#app-dialog.gift-editor-dialog {
+  --dialog-width: 440px;
+  padding: clamp(18px, 4vw, 26px);
+}
+
+.gift-editor-dialog .dialog-heading { margin-bottom: 16px; }
+.editor-form, .editor-fields { display: grid; gap: 14px; }
+.editor-form label { margin: 0; }
+.editor-form label input,
+.editor-form label select,
+.editor-form label textarea { font-size: 16px; }
+.editor-form ::placeholder { color: var(--muted); opacity: 1; }
+.editor-form .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.editor-extras { border-block: 1px solid var(--line); }
+.editor-extras summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  gap: 8px;
+  list-style: none;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.editor-extras summary::-webkit-details-marker { display: none; }
+.editor-extras summary:hover { color: var(--green); }
+.editor-extras[open] summary .mud-icon-root { transform: rotate(180deg); }
+.editor-extras > .editor-fields { padding-block: 5px 14px; }
+
+@media (max-width: 360px) {
+  .editor-form .form-row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+}

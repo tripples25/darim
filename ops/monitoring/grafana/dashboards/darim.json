@@ -1,0 +1,527 @@
+{
+  "uid": "darim-overview",
+  "title": "Darim · Обзор сервиса",
+  "description": "HTTP-запросы, задержки и результаты синхронизации Ohmywishes.",
+  "tags": [
+    "darim",
+    "prometheus"
+  ],
+  "schemaVersion": 39,
+  "editable": false,
+  "refresh": "30s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Сбор метрик",
+      "description": "Проверка связи Prometheus с закрытым эндпоинтом Darim.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Недоступен",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Доступен",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "min(up{job=\"darim\"})",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Darim",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "HTTP-запросы",
+      "description": "Среднее число запросов в секунду к API и маршрутам входа.",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(darim_http_requests_total{job=\"darim\",route!=\"/health\"}[$__rate_interval]))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "Запросы",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Доля HTTP 5xx",
+      "description": "Доля серверных ошибок среди запросов к API и маршрутам входа.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * (sum(rate(darim_http_requests_total{job=\"darim\",route!=\"/health\",status_class=\"5xx\"}[$__rate_interval])) or (0 * sum(rate(darim_http_requests_total{job=\"darim\",route!=\"/health\"}[$__rate_interval])))) / sum(rate(darim_http_requests_total{job=\"darim\",route!=\"/health\"}[$__rate_interval]))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "5xx",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Задержка p95",
+      "description": "95-й процентиль времени ответа для API и маршрутов входа.",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "none",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(darim_http_request_duration_seconds_bucket{job=\"darim\",route!=\"/health\"}[$__rate_interval])))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "HTTP по классам статусов",
+      "description": "Проверки /health вынесены в отдельный график.",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (status_class) (rate(darim_http_requests_total{job=\"darim\",route!=\"/health\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{status_class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Задержка HTTP",
+      "description": "Процентили по API и маршрутам входа.",
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(darim_http_request_duration_seconds_bucket{job=\"darim\",route!=\"/health\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(darim_http_request_duration_seconds_bucket{job=\"darim\",route!=\"/health\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(darim_http_request_duration_seconds_bucket{job=\"darim\",route!=\"/health\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Наиболее активные маршруты",
+      "description": "До пяти шаблонов маршрутов с наибольшим числом запросов в секунду.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(5, sum by (method, route) (rate(darim_http_requests_total{job=\"darim\",route!=\"/health\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{method}} {{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Синхронизация Ohmywishes",
+      "description": "Результаты за скользящие 15 минут. Applied — сохранён импорт, provider_error — ошибка источника, reconnect_required — требуется переподключение, worker_error — ошибка фонового процесса.",
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (increase(darim_ohmywishes_sync_total{job=\"darim\"}[15m]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Проверки /health",
+      "description": "Ответы проверок приложения и базы данных за скользящие 15 минут. Данные появляются после внешних запросов /health.",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (status_class) (increase(darim_http_requests_total{job=\"darim\",route=\"/health\"}[15m]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{status_class}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Добавление подарков",
+      "description": "Успешные HTTP-запросы создания подарка в Darim за скользящие 15 минут.",
+      "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "darim-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "darim-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(darim_http_requests_total{job=\"darim\",route=\"/api/gifts\",method=\"POST\",status_class=\"2xx\"}[15m]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "Создано",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

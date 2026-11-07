@@ -99,13 +99,31 @@ else{
  </main></div>
 }
 
-<dialog id="app-dialog" @onclose="DialogClosed" aria-labelledby="dialog-title">
+<dialog id="app-dialog" class="@(dialog == "editor" ? "gift-editor-dialog" : null)" @onclose="DialogClosed" aria-labelledby="dialog-title">
  <div class="dialog-heading"><h2 id="dialog-title">@DialogTitle</h2><button class="icon-button" aria-label="Закрыть" @onclick="CloseDialog"><MudIcon Icon="@Icons.Material.Outlined.Close" /></button></div>
  @if(!string.IsNullOrEmpty(error)){<div class="error-box" role="alert">@error</div>}
  @if(dialog=="editor"){
-  <form @onsubmit="SaveGift" @onsubmit:preventDefault class="editor-form"><label>Что хочется?<input @bind="editTitle" required maxlength="160" placeholder="Название подарка" autofocus /></label><label>Ссылка на подарок<input type="url" @bind="editUrl" maxlength="2048" placeholder="https://" /></label><div class="form-row"><label>Примерная цена, ₽<input type="number" @bind="editPrice" min="0" max="100000000" step="0.01" placeholder="Необязательно" /></label><label>Праздник<select aria-label="Праздник" @bind="editOccasion"><option>Без повода</option><option>День рождения</option><option>Новый год</option><option value="custom">Свой повод</option></select></label></div>
-  @if(editOccasion=="custom"){<label>Название повода<input @bind="editCustomOccasion" required maxlength="80" placeholder="Например, новоселье" /></label>}
-  <label>Дата праздника (необязательно)<input type="date" @bind="editDate" /></label><label>Подсказка для друзей<textarea @bind="editComment" maxlength="2000" rows="3" placeholder="Цвет, размер или почему это вас порадует"></textarea></label><p class="dialog-hint">Один подарок — один повод. Брони скрыты от вас даже при редактировании.</p><button class="primary-button full" disabled="@busy">@(busy?"Сохраняем…":"Сохранить желание")</button></form>
+  <form @onsubmit="SaveGift" @onsubmit:preventDefault class="editor-form">
+   <div class="editor-fields">
+    <label>Что хочется?<input @bind="editTitle" required maxlength="160" placeholder="Название подарка" autofocus /></label>
+    <label>Ссылка на подарок<input type="url" @bind="editUrl" maxlength="2048" placeholder="https://" /></label>
+   </div>
+   <details class="editor-extras" open="@(selected != null)">
+    <summary>Дополнительные параметры <MudIcon Icon="@Icons.Material.Outlined.ExpandMore" Size="Size.Small" /></summary>
+    <div class="editor-fields">
+     <div class="form-row">
+      <label>Примерная цена, ₽<input type="number" @bind="editPrice" min="0" max="100000000" step="0.01" /></label>
+      <label>Праздник<select aria-label="Праздник" @bind="editOccasion"><option>Без повода</option><option>День рождения</option><option>Новый год</option><option value="custom">Свой повод</option></select></label>
+     </div>
+     @if(editOccasion=="custom"){
+      <label>Название повода<input @bind="editCustomOccasion" required maxlength="80" placeholder="Например, новоселье" /></label>
+     }
+     <label>Дата праздника<input type="date" @bind="editDate" /></label>
+     <label>Подсказка для друзей<textarea @bind="editComment" maxlength="2000" rows="3" placeholder="Цвет, размер или почему это вас порадует"></textarea></label>
+    </div>
+   </details>
+   <button class="primary-button full" disabled="@busy">@(busy?"Сохраняем…":"Сохранить желание")</button>
+  </form>
  }
  else if(dialog=="split"&&selected!=null){
   <p>Разделим «@selected.Details.Title» на равные доли. Вы займёте первую, друзья смогут присоединиться.</p><form @onsubmit="StartSplit" @onsubmit:preventDefault><label>Количество участников<input type="number" min="2" max="@(me!.Company!.Members.Length-1)" @bind="splitSlots" required /></label>@if(selected.Details.Price is {} amount&&splitSlots>0){<div class="split-preview">≈ @((amount/splitSlots).ToString("N0")) ₽ <span>с человека</span></div>}<p class="dialog-hint">Число долей фиксируется. Каждый занимает только одну. Деньги переводите друг другу самостоятельно.</p><button class="primary-button full" disabled="@(busy||me!.Company!.Members.Length<3)">Распилить и занять долю</button></form>

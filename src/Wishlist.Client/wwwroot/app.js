@@ -26,3 +26,8 @@ window.wishlist = {
  openExternal:url=>window.Telegram?.WebApp?.initData?window.Telegram.WebApp.openLink(url):window.open(url,'_blank','noopener,noreferrer'),
  watchFocus:ref=>{const fn=()=>{if(!document.hidden)ref.invokeMethodAsync('RefreshFromFocus');};document.addEventListener('visibilitychange',fn);window.addEventListener('focus',fn);return null;}
 };
+
+document.addEventListener('invalid', event => {
+ const section = event.target.closest('.editor-extras');
+ if (section) section.open = true;
+}, true);
