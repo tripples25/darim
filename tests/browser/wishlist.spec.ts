@@ -1,6 +1,6 @@
 import {createHmac} from 'node:crypto';
 import {test,expect,Page,Browser} from '@playwright/test';
-async function login(page:Page,name:string){await page.goto('/');await page.getByRole('button',{name,exact:true}).click();await expect(page.getByRole('heading',{name:'Все желания.',exact:true})).toBeVisible();}
+async function login(page:Page,name:string){await page.goto('/');await page.getByRole('button',{name,exact:true}).click();await expect(page.getByRole('heading',{name:'Все желания',exact:true})).toBeVisible();}
 test('organizer can create an invitation with a usage limit',async({page})=>{
  await login(page,'Юлия');await page.getByRole('button',{name:'Пригласить',exact:true}).click();const dialog=page.getByRole('dialog');
  await expect(dialog.getByLabel('Количество вступлений')).toHaveValue('one');
@@ -37,6 +37,6 @@ test('Mini App validates signed launch and uses bearer session without cookies',
  const secret=createHmac('sha256','WebAppData').update('123:test-secret').digest();
  const hash=createHmac('sha256',secret).update(data).digest('hex');const initData=new URLSearchParams([...fields,['hash',hash]]).toString();
  await page.route('https://telegram.org/js/telegram-web-app.js',route=>route.fulfill({contentType:'text/javascript',body:`window.Telegram={WebApp:{initData:${JSON.stringify(initData)},initDataUnsafe:{},colorScheme:'dark',ready(){},expand(){},onEvent(){},BackButton:{onClick(){},show(){},hide(){}}}};`}));
- await page.goto('/');await expect(page.getByRole('heading',{name:'Все желания.',exact:true})).toBeVisible();expect(await page.getAttribute('html','data-telegram-theme')).toBe('dark');
+ await page.goto('/');await expect(page.getByRole('heading',{name:'Все желания',exact:true})).toBeVisible();expect(await page.getAttribute('html','data-telegram-theme')).toBe('dark');
  const response=await page.request.get('/api/me');expect(response.status()).toBe(401);await page.getByRole('button',{name:'Добавить желание'}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Закрыть',exact:true}).click();await page.screenshot({path:'artifacts/mini-app-dark.png',fullPage:true});
 });

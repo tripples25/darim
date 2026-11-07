@@ -1,9 +1,10 @@
 <article class="gift-card @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
- <div class="gift-art art-@Art"><span aria-hidden="true">@Emoji</span><span class="occasion-tag">@Gift.Details.Occasion</span></div>
  <div class="gift-content">
-  <div class="gift-eyebrow">@Gift.Owner.Name @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>}</div>
+  <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>}</div>
   <h3>@Gift.Details.Title</h3>
-  <p class="gift-note">@(string.IsNullOrWhiteSpace(Gift.Details.Comment)?"Маленькое желание, большая радость":Gift.Details.Comment)</p>
+  @if (!string.IsNullOrWhiteSpace(Gift.Details.Comment)) {
+   <p class="gift-note">@Gift.Details.Comment</p>
+  }
   <div class="price-row"><strong>@(Gift.Details.Price is {} price?price.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" ₽":"На ваш выбор")</strong>
    @if(Gift.Details.Url is {} url){<a href="@url" target="_blank" rel="noopener noreferrer" aria-label="Открыть ссылку на подарок">В магазин <MudIcon Icon="@Icons.Material.Outlined.NorthEast" Size="Size.Small" /></a>}
   </div>
@@ -31,6 +32,4 @@
  [Parameter]public bool IsOwner{get;set;}
  [Parameter]public EventCallback<string> OnAction{get;set;}
  ParticipationDto? P=>Gift.Participation;
- int Art=>Math.Abs(Gift.Id.GetHashCode()%5);
- string Emoji=>Gift.Details.Title.ToLowerInvariant() switch {var s when s.Contains("коф")=>"☕",var s when s.Contains("науш")=>"🎧",var s when s.Contains("книг")=>"📖",var s when s.Contains("instax")=>"📷",var s when s.Contains("игр")=>"🎲",var s when s.Contains("рюкзак")=>"🎒",var s when s.Contains("концерт")=>"🎟️",var s when s.Contains("керамик")=>"🏺",_=>"🎁"};
 }

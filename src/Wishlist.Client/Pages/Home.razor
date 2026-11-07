@@ -20,22 +20,27 @@ else if(me==null){
  </main>
 }
 else{
- <div class="app-shell">
+ <div class="app-shell wishlist-shell">
  <aside class="sidebar">
   <a class="brand" href="/"><span class="brand-icon"><MudIcon Icon="@Icons.Material.Outlined.Redeem" /></span>дарим<span class="brand-dot">.</span></a>
-  <div class="company-label">ВАША КОМПАНИЯ</div><div class="company-name"><span class="company-symbol">✳</span><strong>@(me.Company?.Name??"Начнём знакомство")</strong></div>
+  <div class="company-name">
+   <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" />
+   <div><small>Ваша компания</small><strong>@(me.Company?.Name ?? "Начнём знакомство")</strong></div>
+  </div>
   <nav aria-label="Основная навигация">
-   <button class="nav-item @(tab=="all"?"active":"")" @onclick='()=>SetTab("all")'><MudIcon Icon="@Icons.Material.Outlined.GridView" /> Все желания</button>
-   <button class="nav-item @(tab=="mine"?"active":"")" @onclick='()=>SetTab("mine")'><MudIcon Icon="@Icons.Material.Outlined.FavoriteBorder" /> Мои желания</button>
-   <button class="nav-item @(tab=="giving"?"active":"")" @onclick='()=>SetTab("giving")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" /> Я дарю <span class="nav-count">@gifts.Count(g=>!g.Archived&&g.Participation?.IsMine==true)</span></button>
+   <button class="nav-item @(tab=="all"?"active":"")" aria-current="@(tab == "all" ? "page" : null)" @onclick='()=>SetTab("all")'><MudIcon Icon="@Icons.Material.Outlined.GridView" /> Все желания</button>
+   <button class="nav-item @(tab=="mine"?"active":"")" aria-current="@(tab == "mine" ? "page" : null)" @onclick='()=>SetTab("mine")'><MudIcon Icon="@Icons.Material.Outlined.FavoriteBorder" /> Мои желания</button>
+   <button class="nav-item @(tab=="giving"?"active":"")" aria-current="@(tab == "giving" ? "page" : null)" @onclick='()=>SetTab("giving")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" /> Я дарю <span class="nav-count">@gifts.Count(g=>!g.Archived&&g.Participation?.IsMine==true)</span></button>
   </nav>
-  <div class="sidebar-tip"><span>Немного волшебства</span><p>Вы знаете, что подарить.<br />Они пока не догадываются.</p><MudIcon Icon="@Icons.Material.Outlined.AutoAwesome" /></div>
-  <div class="sidebar-bottom"><button class="user-button" @onclick="OpenProfile"><span class="avatar">@Initial(me.User.Name)</span><span><strong>@me.User.Name</strong><small>Мой профиль</small></span><MudIcon Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" /></button><button class="logout-button" disabled="@busy" @onclick="Logout">Выйти</button></div>
+  <div class="sidebar-bottom"><button class="user-button" aria-label="Мой профиль" @onclick="OpenProfile"><span class="avatar">@Initial(me.User.Name)</span><span><strong>@me.User.Name</strong><small>Мой профиль</small></span><MudIcon Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" /></button><button class="logout-button" disabled="@busy" @onclick="Logout">Выйти</button></div>
  </aside>
  <main class="main-area">
-  <header class="topbar"><span class="breadcrumb">Наша компания <span>/</span> @TabTitle</span><div class="top-actions">
+  <header class="topbar">
+   <span class="breadcrumb">Наша компания <span>/</span> @TabTitle</span>
+   <a class="mobile-wordmark" href="/">дарим<span>.</span></a>
+   <div class="top-actions">
    @if(me.Company!=null){<div class="avatar-stack" aria-label="Участники компании">@foreach(var person in me.Company.Members.Take(4)){<span class="avatar small" title="@person.Name">@Initial(person.Name)</span>}</div>}
-   @if(me.Company?.IsOrganizer==true){<button class="soft-button invite-button" @onclick="OpenInvite"><MudIcon Icon="@Icons.Material.Outlined.PersonAddAlt" Size="Size.Small" /> Пригласить</button>}
+   @if(me.Company?.IsOrganizer==true){<button class="soft-button invite-button" aria-label="Пригласить" @onclick="OpenInvite"><MudIcon Icon="@Icons.Material.Outlined.PersonAddAlt" Size="Size.Small" /> Пригласить</button>}
    <button class="icon-button notice-button" aria-label="Уведомления" @onclick="OpenNotices"><MudIcon Icon="@Icons.Material.Outlined.NotificationsNone" />@if(notices.Any(n=>!n.Read)){<span class="unread-dot"></span>}</button>
   </div></header>
   <div class="page-content">
@@ -46,19 +51,46 @@ else{
      <form @onsubmit="JoinCompany" @onsubmit:preventDefault><h2>Есть приглашение?</h2><label>Код или ссылка<input @bind="joinToken" required placeholder="Вставьте приглашение" /></label><button class="soft-button" disabled="@busy">Присоединиться</button></form>
     </div></section>
    }else{
-    <section class="page-heading"><div><div class="eyebrow">МАЛЕНЬКИЕ ПОВОДЫ ДЛЯ БОЛЬШОЙ РАДОСТИ</div><h1>@TabTitle<span class="heading-dot">.</span></h1><p>@TabDescription</p></div><button class="primary-button add-button" disabled="@busy" @onclick="()=>OpenEditor(null)"><MudIcon Icon="@Icons.Material.Outlined.Add" Size="Size.Small" /> Добавить желание</button></section>
+    <header class="wishlist-cover">
+     <div class="wishlist-cover-copy">
+      <h1>@TabTitle</h1>
+      <p>@TabDescription</p>
+      <button class="primary-button cover-add" disabled="@busy" @onclick="()=>OpenEditor(null)">
+       <MudIcon Icon="@Icons.Material.Outlined.Add" Size="Size.Small" /> Добавить желание
+      </button>
+     </div>
+    </header>
     @if(tab=="all"){
-     <div class="people-filter" aria-label="Фильтр по человеку"><button class="person-chip @(ownerFilter==""?"selected":"")" @onclick='()=>ownerFilter=""'><span class="avatar all-avatar"><MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" /></span><span>Все</span></button>@foreach(var person in me.Company.Members){<button class="person-chip @(ownerFilter==person.Id.ToString()?"selected":"")" @onclick="()=>ownerFilter=person.Id.ToString()"><span class="avatar">@Initial(person.Name)</span><span>@person.Name @(person.Id==me.User.Id?"(вы)":"")</span></button>}</div>
+     <div class="people-filter" role="group" aria-label="Фильтр по человеку">
+      <button class="person-chip @(ownerFilter==""?"selected":"")" aria-pressed="@(ownerFilter == "" ? "true" : "false")" @onclick='()=>ownerFilter=""'>
+       <span class="avatar all-avatar"><MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" /></span>Все
+      </button>
+      @foreach(var person in me.Company.Members){
+       var selected = ownerFilter == person.Id.ToString();
+       <button class="person-chip @(selected ? "selected" : "")" aria-pressed="@(selected ? "true" : "false")" @onclick="()=>ownerFilter=person.Id.ToString()">
+        <span class="avatar" aria-hidden="true">@Initial(person.Name)</span><span>@person.Name @(person.Id==me.User.Id?"(вы)":"")</span>
+       </button>
+      }
+     </div>
     }
-    <div class="filter-bar"><label class="search-box"><MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" /><input aria-label="Поиск желаний" placeholder="Найти то самое желание" @bind="search" @bind:event="oninput" /></label><div class="select-filters">
+    <div class="filter-bar"><label class="search-box"><MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" /><input aria-label="Поиск желаний" placeholder="Поиск желаний" @bind="search" @bind:event="oninput" /></label><div class="select-filters">
      <select aria-label="Праздник" @bind="occasion"><option value="">Все праздники</option>@foreach(var value in Occasions){<option value="@value">@value</option>}</select>
      @if(tab!="mine"){<select aria-label="Доступность" @bind="availability"><option value="">Все подарки</option><option value="free">Свободные</option><option value="split">Можно скинуться</option></select>}
      <select aria-label="Цена" @bind="priceFilter"><option value="">Любая цена</option><option value="5000">До 5 000 ₽</option><option value="10000">До 10 000 ₽</option><option value="20000">До 20 000 ₽</option></select>
     </div></div>
-    <div class="list-caption"><span>@Filtered.Count() желаний <span class="caption-dot">·</span> @me.Company.Members.Length близких людей</span><label class="archive-toggle"><input type="checkbox" @bind="showArchived" /> Архив</label></div>
+    <div class="list-caption"><span>@(showArchived ? "В архиве" : "В списке") <strong>@Filtered.Count()</strong></span><label class="archive-toggle"><input type="checkbox" @bind="showArchived" /> Архив</label></div>
     @foreach(var group in Filtered.GroupBy(g=>g.Owner.Id)){
      var person=group.First().Owner;
-     <section class="person-section"><div class="section-heading"><span class="avatar">@Initial(person.Name)</span><h2>@person.Name @(person.Id==me.User.Id?"· это вы":"")</h2><span class="section-count">@group.Count()</span><div class="section-line"></div></div><div class="gift-grid">@foreach(var gift in group){<GiftCard @key="gift.Id" Gift="gift" IsOwner="@(gift.Owner.Id==me.User.Id)" OnAction="action=>GiftAction(gift,action)" />}</div></section>
+     <section class="person-section" @key="person.Id">
+      <div class="section-heading">
+       <span class="avatar" aria-hidden="true">@Initial(person.Name)</span>
+       <h2>@person.Name</h2>
+       @if(person.Id == me.User.Id){<span class="section-self">Это вы</span>}
+       <span class="section-count" aria-label="Желаний в группе">@group.Count()</span>
+       <div class="section-line"></div>
+      </div>
+      <div class="gift-grid">@foreach(var gift in group){<GiftCard @key="gift.Id" Gift="gift" IsOwner="@(gift.Owner.Id==me.User.Id)" OnAction="action=>GiftAction(gift,action)" />}</div>
+     </section>
     }
     @if(!Filtered.Any()){<div class="empty-state"><span>🌱</span><h2>@(tab=="giving"?"Здесь будут ваши сюрпризы":"Место для новых желаний")</h2><p>@(tab=="giving"?"Выберите подарок в общем списке или присоединитесь к распилу.":"Попробуйте изменить фильтры или добавьте первое желание.")</p><button class="soft-button" @onclick="ResetFilters">Сбросить фильтры</button></div>}
     <footer class="page-footer"><MudIcon Icon="@Icons.Material.Outlined.VisibilityOff" Size="Size.Small" /> Брони на ваши подарки видны всем, кроме вас. Сюрприз останется сюрпризом.</footer>
