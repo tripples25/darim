@@ -9,6 +9,7 @@ public partial class Home {
  bool ready,busy,showArchived,filtersExpanded;string? error,dialog,inviteLink,miniInviteLink;string tab="all",ownerFilter="",search="",occasion="",availability="",priceFilter="";
  AuthInfoDto? info;MeDto? me;GiftDto[] gifts=[];NoticeDto[] notices=[];GiftDto? selected;
  OhmywishesStatusDto? ohmywishes;OhmywishesListDto[]? ohmywishesLists;string ohmywishesSelection="";
+ bool ohmywishesLoading;string? ohmywishesError;
  string ohmywishesWebLink="";
  string editTitle="",editUrl="",editComment="",editOccasion="Без повода",editCustomOccasion="";decimal? editPrice;DateTime? editDate;
  string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
@@ -42,7 +43,7 @@ public partial class Home {
    await Load();
    if(me!=null && launch.Ohmywishes is "connected" or "failed" or "profile"){
     await OpenProfile();
-    if(launch.Ohmywishes=="failed")error="Не удалось подключить Ohmywishes. Попробуйте ещё раз.";
+    if(launch.Ohmywishes=="failed")ohmywishesError="Не удалось подключить Ohmywishes. Попробуйте ещё раз.";
    }
   }catch(Exception e)when(e is HttpRequestException or Services.ApiException or JSException){error=e.Message;}
   finally{ready=true;StateHasChanged();}
@@ -66,7 +67,18 @@ public partial class Home {
  async Task Refresh(){if(busy)return;try{error=null;await Load();}catch(Exception e)when(e is HttpRequestException or Services.ApiException){error=e.Message;}StateHasChanged();}
  [JSInvokable]public Task RefreshFromFocus()=>Refresh();
  async Task Poll(){using var timer=new PeriodicTimer(TimeSpan.FromSeconds(25));try{while(await timer.WaitForNextTickAsync(lifetime.Token)){if(me?.Company!=null)await InvokeAsync(Refresh);}}catch(OperationCanceledException){}}
- async Task Run(Func<Task> work,bool close=false){if(busy)return;busy=true;error=null;try{await work();if(close)await CloseDialog();await Load();}catch(Exception e)when(e is HttpRequestException or Services.ApiException or JSException){error=e.Message;Snackbar.Add(e.Message,Severity.Error);if(e is Services.ApiException {Status:HttpStatusCode.Conflict})await RefreshAfterConflict();}finally{busy=false;StateHasChanged();}}
+ async Task Run(Func<Task> work,bool close=false,bool ohmywishesAction=false){
+  if(busy)return;
+  busy=true;
+  if(ohmywishesAction)ohmywishesError=null;
+  else error=null;
+  try{await work();if(close)await CloseDialog();await Load();}
+  catch(Exception e)when(e is HttpRequestException or Services.ApiException or JSException){
+   if(ohmywishesAction)ohmywishesError=e.Message;
+   else{error=e.Message;Snackbar.Add(e.Message,Severity.Error);}
+   if(e is Services.ApiException {Status:HttpStatusCode.Conflict})await RefreshAfterConflict();
+  }finally{busy=false;StateHasChanged();}
+ }
  async Task RefreshAfterConflict(){try{await Load();}catch(HttpRequestException){}catch(Services.ApiException){}}
  async Task DemoLogin(int i)=>await Run(async()=>{await Api.Change($"auth/demo/{i}");Api.Clear();me=await Api.Get<MeDto>("api/me");if(joinToken!=""){await Api.Change("api/company/join",new JoinCompanyInput(joinToken));await JS.InvokeVoidAsync("wishlist.clearInvite");joinToken="";me=await Api.Get<MeDto>("api/me");}});
  async Task Logout()=>await Run(async()=>{if(!Api.IsMini)await Api.Change("api/logout");Api.Clear();me=null;gifts=[];notices=[];});
@@ -89,33 +101,38 @@ public partial class Home {
  async Task LogoutFromProfile(){await CloseDialog();await Logout();}
  async Task OpenProfile(){
   profileName=me!.User.Name;profileContact=me.User.Contact??"";
-  ohmywishes=null;ohmywishesLists=null;ohmywishesWebLink="";
+  ohmywishes=null;ohmywishesLists=null;ohmywishesWebLink="";ohmywishesError=null;
+  ohmywishesLoading=me.Company!=null;
   await Show("profile");
-  if(me.Company==null)return;
+  if(ohmywishesLoading)await LoadOhmywishesStatus();
+ }
+ async Task LoadOhmywishesStatus(){
+  ohmywishesLoading=true;ohmywishesError=null;
   try{ohmywishes=await Api.Get<OhmywishesStatusDto>("api/ohmywishes");}
-  catch(Exception ex)when(ex is HttpRequestException or Services.ApiException){error=ex.Message;}
+  catch(Exception ex)when(ex is HttpRequestException or Services.ApiException){ohmywishesError="Не удалось проверить подключение к Ohmywishes.";}
+  finally{ohmywishesLoading=false;}
  }
  async Task ConnectOhmywishes()=>await Run(async()=>{
   var authorization=await Api.Post<OhmywishesAuthorization>("api/ohmywishes/connect");
   Navigation.NavigateTo(authorization.Url,forceLoad:true);
- });
+ },ohmywishesAction:true);
  async Task OpenOhmywishesInBrowser()=>await JS.InvokeVoidAsync("wishlist.openExternal",Navigation.BaseUri+"?ohmywishes=profile");
  async Task ConnectOhmywishesWeb()=>await Run(async()=>{
   await Api.Change("api/ohmywishes/web-connect",new OhmywishesWebSelection(ohmywishesWebLink));
   ohmywishesWebLink="";
- });
+ },ohmywishesAction:true);
  async Task LoadOhmywishesLists()=>await Run(async()=>{
   ohmywishesLists=await Api.Get<OhmywishesListDto[]>("api/ohmywishes/lists");
   ohmywishesSelection=ohmywishes?.ListId??"";
- });
+ },ohmywishesAction:true);
  async Task SelectOhmywishesList()=>await Run(async()=>{
   await Api.Change("api/ohmywishes/list",new OhmywishesSelection(ohmywishesSelection),put:true);
   ohmywishesLists=null;
- });
+ },ohmywishesAction:true);
  async Task DisconnectOhmywishes()=>await Run(async()=>{
   await Api.Change("api/ohmywishes/disconnect");
   ohmywishesLists=null;
- });
+ },ohmywishesAction:true);
  async Task SaveProfile()=>await Run(async()=>{await Api.Change("api/profile",new ProfileInput(profileName,profileContact),true);me=await Api.Get<MeDto>("api/me");Snackbar.Add("Профиль сохранён",Severity.Success);},true);
  async Task CreateCompany()=>await Run(async()=>{var invitation=await Api.Post<InviteDto>("api/company",new CreateCompanyInput(companyName));me=await Api.Get<MeDto>("api/me");issuedInviteLimit=1;SetInvite(invitation.Token);await Show("invite");});
  async Task JoinCompany()=>await Run(async()=>{var token=joinToken.Trim();if(Uri.TryCreate(token,UriKind.Absolute,out var uri)){var match=System.Text.RegularExpressions.Regex.Match(uri.Query,@"(?:invite=|startapp=join_)([a-zA-Z0-9_-]+)");token=match.Success?match.Groups[1].Value:token;}await Api.Change("api/company/join",new JoinCompanyInput(token));await JS.InvokeVoidAsync("wishlist.clearInvite");me=await Api.Get<MeDto>("api/me");});

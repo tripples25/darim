@@ -80,6 +80,27 @@ test('mobile filters can be collapsed and cleared without leaving the archive', 
 });
 test('desktop wishlist renders without JavaScript errors',async({page})=>{const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page,'Юлия');await expect(page.locator('article').first()).toBeVisible();await page.screenshot({path:'artifacts/desktop.png',fullPage:true});expect(errors).toEqual([]);});
 
+test('Ohmywishes link errors stay next to the field after a refresh', async ({page}) => {
+ await login(page,'Юлия');
+ await page.route('**/api/ohmywishes', route => route.fulfill({json:{webApiEnabled:true}}));
+ const message = 'Этот список недоступен без входа в Ohmywishes.';
+ await page.route('**/api/ohmywishes/web-connect', route => route.fulfill({status:400,json:{title:message}}));
+ await page.getByRole('button',{name:'Мой профиль',exact:true}).click();
+ const dialog = page.getByRole('dialog',{name:'Мой профиль'});
+ const section = dialog.getByRole('region',{name:'Ohmywishes'});
+ const input = section.getByLabel('Ссылка на ваш список Ohmywishes');
+ const link = 'https://ohmywishes.com/users/example/lists/test';
+ await input.fill(link);
+ await section.getByRole('button',{name:'Подключить по ссылке'}).click();
+ await expect(section.getByRole('alert')).toHaveText(message);
+ const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/ohmywishes');
+ await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+ await refreshed;
+ await expect(dialog.getByRole('alert')).toHaveCount(1);
+ await expect(input).toHaveValue(link);
+ await expect(input).toHaveAccessibleDescription(/Этот список недоступен без входа/);
+});
+
 test('Mini App validates signed launch and uses bearer session without cookies',async({page})=>{
  const fields=new Map([['auth_date',Math.floor(Date.now()/1000).toString()],['user',JSON.stringify({id:9000000000,first_name:'Юлия'})]]);
  const data=[...fields].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join('\n');

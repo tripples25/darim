@@ -186,24 +186,33 @@ else{
  }
  else if(dialog=="profile"){
   <form @onsubmit="SaveProfile" @onsubmit:preventDefault><label>Как вас зовут<input @bind="profileName" required maxlength="100" /></label><label>Как с вами связаться<input @bind="profileContact" maxlength="200" placeholder="@@username или другой контакт" /></label><p class="dialog-hint">Контакт увидят только участники совместного подарка, в котором вы участвуете. Он нужен для распила.</p><button class="primary-button full" disabled="@busy">Сохранить</button><button type="button" class="text-danger" disabled="@busy" @onclick="LogoutFromProfile">Выйти из аккаунта</button></form>
-  @if(ohmywishes is { } integration && (integration.Enabled || integration.Connected || integration.Reconnect || integration.WebApiEnabled)){
-   <section aria-labelledby="ohmywishes-heading">
+  @if(ohmywishesLoading || ohmywishesError != null || ohmywishes is { Enabled: true } or { Connected: true } or { Reconnect: true } or { WebApiEnabled: true }){
+   <section class="ohmywishes-settings" aria-labelledby="ohmywishes-heading">
     <h3 id="ohmywishes-heading">Ohmywishes</h3>
+    @if(ohmywishesLoading){<p class="dialog-hint" role="status">Проверяем подключение…</p>}
+    else if(ohmywishes is not { } integration){
+     <p class="error-box" role="alert">@ohmywishesError</p>
+     <button type="button" class="soft-button" disabled="@busy" @onclick="LoadOhmywishesStatus">Проверить снова</button>
+    }else{
+    var showWebForm = integration.WebApiEnabled && !integration.Connected && !integration.Reconnect;
+    @if(!showWebForm && ohmywishesError != null){<p class="error-box" role="alert">@ohmywishesError</p>}
     @if(integration.ListTitle is {} title){<p>Список «@title»</p>}
     @if(integration.LastSuccess is {} updated){<p class="dialog-hint">Последнее обновление: @updated.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>}
     @if(integration.WebApiConnected ? !integration.WebApiEnabled : !integration.Enabled && (integration.Connected || integration.Reconnect)){<p role="status">Синхронизация приостановлена.</p>}
     else if(integration.Reconnect){<p role="status">Доступ к Ohmywishes потерян. Подключитесь снова.</p>}
     else if(integration.Stale){<p role="status">Не удалось обновить список. Повторим попытку автоматически.</p>}
     else if(integration.ListId != null && integration.LastSuccess == null){<p role="status">Первое обновление скоро начнётся.</p>}
+    else if(integration.ListId != null){<p class="dialog-hint">Новые желания появятся автоматически.</p>}
     @if(integration.Enabled && !integration.Connected){
      <p class="dialog-hint">Выбранный список увидят участники вашей компании.</p>
      @if(Api.IsMini){<button class="soft-button" @onclick="OpenOhmywishesInBrowser">Открыть «Дарим» в браузере</button>}
      else{<button class="soft-button" disabled="@busy" @onclick="ConnectOhmywishes">@(integration.Reconnect ? "Переподключить" : "Подключить Ohmywishes")</button>}
     }
-    @if(integration.WebApiEnabled && !integration.Connected && !integration.Reconnect){
+    @if(showWebForm){
      <form @onsubmit="ConnectOhmywishesWeb" @onsubmit:preventDefault>
-      <label>Ссылка на ваш список Ohmywishes<input type="url" maxlength="512" @bind="ohmywishesWebLink" required /></label>
-      <p class="dialog-hint">Карточки из списка появятся у участников вашей компании.</p>
+      <p id="ohmywishes-link-help" class="dialog-hint">Откройте нужный список в Ohmywishes и скопируйте ссылку через «Поделиться». Список должен открываться без входа. Его увидят участники вашей компании.</p>
+      <label>Ссылка на ваш список Ohmywishes<input type="url" inputmode="url" autocapitalize="none" spellcheck="false" maxlength="512" aria-describedby="@(ohmywishesError == null ? "ohmywishes-link-help" : "ohmywishes-link-help ohmywishes-link-error")" @bind="ohmywishesWebLink" required /></label>
+      @if(ohmywishesError != null){<p id="ohmywishes-link-error" class="error-box" role="alert">@ohmywishesError</p>}
       <button class="soft-button" disabled="@busy">Подключить по ссылке</button>
      </form>
     }
@@ -221,6 +230,7 @@ else{
     }
     @if(integration.Connected || integration.Reconnect){
      <button class="text-danger" disabled="@busy" @onclick="DisconnectOhmywishes">Отключить Ohmywishes</button>
+    }
     }
    </section>
   }
