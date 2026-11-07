@@ -22,8 +22,7 @@ steps:
     environment:
       DEPLOY_HOST: 83.141.93.56
       DEPLOY_USER: root
-      DEPLOY_PATH: /opt/darim
-      DEPLOY_HEALTH_URL: https://wishes.hype-ny.ru/health
+      COOLIFY_SERVICE_UUID: 6o4qlqy50orrzxavuw0c7rp5
       SSHPASS:
         from_secret: production_ssh_password
       DEPLOY_KNOWN_HOSTS:

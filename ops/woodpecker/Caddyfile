@@ -6,11 +6,21 @@ ci.hype-ny.ru {
 
 wishes.hype-ny.ru {
     encode zstd gzip
-    reverse_proxy darim-app:8080
+    reverse_proxy darim-coolify-app:8080
     header {
         X-Content-Type-Options nosniff
         Referrer-Policy strict-origin-when-cross-origin
         Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
         -Server
     }
+}
+
+coolify.hype-ny.ru {
+    @realtime path /app/* /apps/*
+    reverse_proxy @realtime coolify:6001
+
+    @terminal path /terminal/ws
+    reverse_proxy @terminal coolify:6002
+
+    reverse_proxy coolify:8080
 }
