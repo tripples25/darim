@@ -2,6 +2,7 @@
 set -eu
 project="darim-ci-${CI_PIPELINE_NUMBER:?}"
 verification="darim-ci-verify-${CI_PIPELINE_NUMBER}"
+runtime="darim-ci-runtime-${CI_PIPELINE_NUMBER}"
 # A cancelled outer step can leave a sibling docker-run container behind.
 # This agent executes one workflow at a time, so any older labelled verifier
 # is stale. Only touch containers of this repository inside the CI daemon.
@@ -20,7 +21,7 @@ for stale in $(docker ps -a --filter label=com.docker.compose.project \
   docker compose -p "$stale" -f compose.dev.yaml down -v --remove-orphans
 done
 cleanup() {
-  docker rm -f "$verification" >/dev/null 2>&1 || true
+  docker rm -f "$verification" "$runtime" >/dev/null 2>&1 || true
   docker compose -p "$project" -f compose.dev.yaml down -v --remove-orphans
 }
 trap cleanup EXIT
@@ -34,4 +35,25 @@ docker run --rm --name "$verification" --label darim.ci.verification=true \
   -w "$PWD" -e CI_PIPELINE_NUMBER \
   darim-ci-tools:dotnet10 sh ops/verify.sh &
 wait "$!"
-docker build -t "darim:${CI_COMMIT_SHA:?}" .
+docker build --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:?}" \
+  --label "io.darim.ci.pipeline=$CI_PIPELINE_NUMBER" -t "darim:$CI_COMMIT_SHA" .
+
+# Verify the exact runtime image that will be published.
+docker compose -p "$project" -f compose.dev.yaml up -d --wait
+network="${project}_default"
+database='Host=db;Database=wishlist;Username=wishlist;Password=local-development-only'
+docker run --rm --network "$network" -e "ConnectionStrings__Database=$database" \
+  -e Auth__SigningKey=ci-runtime-check-key-not-for-production \
+  "darim:$CI_COMMIT_SHA" --migrate
+docker run -d --name "$runtime" --network "$network" \
+  --label darim.ci.verification=true --label "darim.ci.pipeline=$CI_PIPELINE_NUMBER" \
+  -e "ConnectionStrings__Database=$database" \
+  -e Auth__SigningKey=ci-runtime-check-key-not-for-production \
+  "darim:$CI_COMMIT_SHA"
+for attempt in $(seq 1 20); do
+  if docker run --rm --network "$network" --entrypoint wget docker:27-cli \
+    -qO- -T 2 "http://$runtime:8080/health" | grep -q '"status":"ok"'; then exit 0; fi
+  sleep 2
+done
+docker logs "$runtime"
+exit 1

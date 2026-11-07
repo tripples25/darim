@@ -28,6 +28,7 @@ services:
     environment:
       DOCKER_TLS_CERTDIR: ''
     mem_limit: 3g
+    ports: ['127.0.0.1:5000:5000']
     volumes:
       - worker_data:/var/lib/docker
       - worker_socket:/run/ci
@@ -45,6 +46,18 @@ services:
     volumes:
       - agent_data:/etc/woodpecker
       - worker_socket:/run/ci
+  registry:
+    image: registry:3
+    restart: unless-stopped
+    network_mode: service:worker-docker
+    depends_on:
+      worker-docker:
+        condition: service_started
+        restart: true
+    environment:
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+    volumes:
+      - registry_data:/var/lib/registry
 networks:
   edge:
     external: true
@@ -62,3 +75,4 @@ volumes:
   worker_socket:
     external: true
     name: darim-ci_worker_socket
+  registry_data:

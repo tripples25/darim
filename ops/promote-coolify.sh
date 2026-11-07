@@ -6,7 +6,7 @@ uuid=${1:?Coolify service UUID required}
 sha=${2:?Commit SHA required}
 pipeline=${3:?Pipeline number required}
 [[ $uuid =~ ^[a-z0-9]{24}$ && $sha =~ ^[a-f0-9]{40}$ && $pipeline =~ ^[0-9]+$ ]]
-image="darim:$sha"
+image=${4:-darim:$sha}
 app="app-$uuid"
 db="db-$uuid"
 migrate="migrate-$uuid"

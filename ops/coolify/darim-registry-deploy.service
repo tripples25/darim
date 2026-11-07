@@ -1,0 +1,9 @@
+[Unit]
+Description=Deploy the verified Darim image from the private registry
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/darim/registry-deploy/reconcile-registry.sh
+TimeoutStartSec=5min

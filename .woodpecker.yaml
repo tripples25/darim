@@ -1,7 +1,6 @@
 # Only trusted main commits run on this single-server installation.
-# External PRs require a separate worker host before enabling them.
 when:
-  - event: [push, manual, deployment]
+  - event: [push, manual]
     branch: main
 
 steps:
@@ -11,26 +10,22 @@ steps:
       - /run/ci/docker.sock:/var/run/docker.sock
     commands:
       - sh ops/woodpecker-build.sh
-    when:
-      - event: [push, manual]
-        branch: main
 
-  - name: deploy-production
+  - name: publish-verified-image
     image: docker:27-cli
     volumes:
       - /run/ci/docker.sock:/var/run/docker.sock
-    environment:
-      DEPLOY_HOST: 83.141.93.56
-      DEPLOY_USER: root
-      COOLIFY_SERVICE_UUID: 6o4qlqy50orrzxavuw0c7rp5
-      SSHPASS:
-        from_secret: production_ssh_password
-      DEPLOY_KNOWN_HOSTS:
-        from_secret: production_known_hosts
     commands:
-      - apk add --no-cache openssh-client sshpass curl
-      - sh ops/deploy-woodpecker.sh
+      - sh ops/publish-woodpecker-image.sh
     when:
-      - event: deployment
+      - event: push
         branch: main
-        evaluate: 'CI_PIPELINE_DEPLOY_TARGET == "production"'
+
+  - name: production-deployment
+    image: alpine:3.22
+    commands:
+      - apk add --no-cache curl jq
+      - sh ops/wait-production.sh
+    when:
+      - event: push
+        branch: main

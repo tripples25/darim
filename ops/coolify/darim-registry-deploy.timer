@@ -1,0 +1,10 @@
+[Unit]
+Description=Check for a verified Darim image to deploy
+
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=15s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

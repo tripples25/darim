@@ -6,7 +6,15 @@ https://ci.hype-ny.ru {
 
 https://wishes.hype-ny.ru {
     encode zstd gzip
-    reverse_proxy darim-coolify-app:8080
+    handle /deployment.json {
+        header Cache-Control "no-store"
+        root * /dynamic
+        rewrite * /darim-deployment.json
+        file_server
+    }
+    handle {
+        reverse_proxy darim-coolify-app:8080
+    }
     header {
         X-Content-Type-Options nosniff
         Referrer-Policy strict-origin-when-cross-origin
