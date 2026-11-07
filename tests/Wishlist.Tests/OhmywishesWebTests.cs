@@ -16,6 +16,7 @@ public class OhmywishesWebTests
     private const string Account = "111111111111111111111111";
     internal const string List = "222222222222222222222222";
     private const string Wish = "333333333333333333333333";
+    private const string Shared = "9f8b1234-d875-471b-85c3-51068cdfce67";
 
     [Theory]
     [InlineData("https://ohmywishes.com.evil.test/users/dream/lists/222222222222222222222222")]
@@ -46,6 +47,23 @@ public class OhmywishesWebTests
     }
 
     [Fact]
+    public async Task SharedLinkUsesOnlyListScopedReadsAndStopsImportWhenRevoked()
+    {
+        using var handler = new WebHandler { ProfilePrivate = true };
+        using var http = new HttpClient(handler);
+        var web = new OhmywishesWeb(http);
+        var link = OhmywishesWeb.ParseLink($"https://ohmywishes.com/users/dream/lists/{Shared}")!;
+        var source = (await web.Resolve(link, default))!;
+        Assert.Equal(List, source.ListId);
+        Assert.Equal(Shared, source.ShareToken);
+        var snapshot = await web.Snapshot(source.AccountId, source.ListId, default, source.ShareToken);
+        Assert.Equal("По ссылке", Assert.Single(snapshot).Value.Title);
+        Assert.Equal(0, handler.GlobalWishRequests);
+        handler.ListRequiresSignIn = true;
+        Assert.Empty(await web.Snapshot(source.AccountId, source.ListId, default, source.ShareToken));
+    }
+
+    [Fact]
     public void PilotRequiresBothFlagAndMatchingTelegramId()
     {
         OhmywishesOptions Options(string? enabled, string? user) => new(new ConfigurationBuilder().AddInMemoryCollection(
@@ -65,6 +83,7 @@ public class OhmywishesWebTests
         public bool ProfilePrivate { get; set; }
         public bool ListRequiresSignIn { get; set; }
         public int Requests { get; private set; }
+        public int GlobalWishRequests { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -74,13 +93,18 @@ public class OhmywishesWebTests
             Assert.Null(request.Headers.Authorization);
             Assert.False(request.Headers.Contains("Cookie"));
             var root = $"/api/v3/users/{Account}/wish-lists/{List}";
-            if (ListRequiresSignIn && request.RequestUri.AbsolutePath == root)
+            var sharedRoot = $"/api/v3/users/{Account}/wish-lists/{Shared}";
+            if (ListRequiresSignIn && (request.RequestUri.AbsolutePath == root || request.RequestUri.AbsolutePath == sharedRoot))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            if (request.RequestUri.AbsolutePath == $"/api/v3/wishes/{Wish}") GlobalWishRequests++;
             object result = request.RequestUri.AbsolutePath switch
             {
                 "/api/v3/users/dream" or $"/api/v3/users/{Account}" => new { item = new { id = Account, isPrivate = ProfilePrivate } },
                 var path when path == root => new { item = new { id = List, title = "Подарки" } },
                 var path when path == root + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
+                var path when path == sharedRoot => new { item = new { id = List, title = "Подарки", visibility = "by_link" } },
+                var path when path == sharedRoot + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
+                var path when path == sharedRoot + $"/wishes-v2/{Wish}" => new { item = new { id = Wish, title = "По ссылке", creator = new { id = Account } } },
                 $"/api/v3/wishes/{Wish}" => new { item = new { id = Wish, title = "Книга", visibility = Visibility,
                     isPrivate = Visibility == "private", isFulfilled = false, creator = new { id = Account },
                     wishLists = new[] { new { id = List } } } },

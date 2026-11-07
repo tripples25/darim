@@ -12,6 +12,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     OhmywishesMcp mcp, IDataProtectionProvider protection, ILogger<OhmywishesSync> logger, OhmywishesWeb web)
 {
     private readonly IDataProtector tokenProtector = protection.CreateProtector("ohmywishes.tokens.v1");
+    private readonly IDataProtector webLinkProtector = protection.CreateProtector("ohmywishes.share-link.v1");
 
     public async Task<OhmywishesStatusDto> Status(Guid userId, CancellationToken ct)
     {
@@ -33,7 +34,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             x => x.Id == userId && x.TelegramId == pilot && x.CompanyId != null, ct))
             throw new RuleException("Подключение недоступно.", 404);
         var link = OhmywishesWeb.ParseLink(url)
-            ?? throw new RuleException("Вставьте ссылку на отдельный публичный список Ohmywishes.", 400);
+            ?? throw new RuleException("Скопируйте ссылку через «Поделиться» в отдельном списке Ohmywishes.", 400);
         var previous = await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
         if (previous is { WebApi: false }) throw new RuleException("Сначала отключите текущее подключение Ohmywishes.");
         OhmywishesWeb.PublicListSource? source;
@@ -62,6 +63,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         connection.AccountId = source.AccountId;
         connection.ListId = source.ListId;
         connection.ListTitle = source.Title;
+        connection.ProtectedTokens = source.ShareToken == null ? null : webLinkProtector.Protect(source.ShareToken);
         connection.Revision = Guid.NewGuid();
         connection.NextSync = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -190,7 +192,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 if (job?.ListId != null)
                 {
                     var snapshot = job.WebApi
-                        ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token)
+                        ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token, job.Access)
                         : await mcp.Snapshot(job.Access!, job.ListId, deadline.Token);
                     await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, deadline.Token);
                 }
@@ -198,7 +200,8 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             catch (Exception ex) when (IsProviderFailure(ex, ct))
             {
                 logger.LogWarning("Ohmywishes refresh failed for user {UserId} ({Failure}).", entry.UserId, ex.GetType().Name);
-                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens, ex is OhmywishesAccessException, ct);
+                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens,
+                    ex is OhmywishesAccessException or CryptographicException, ct);
             }
             finally
             {
@@ -219,10 +222,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         if (connection.WebApi)
         {
             if (!scheduled || !options.AllowsWebApi(user.TelegramId)) return null;
+            var shareToken = connection.ProtectedTokens == null ? null : webLinkProtector.Unprotect(connection.ProtectedTokens);
             connection.NextSync = DateTimeOffset.UtcNow.AddMinutes(Math.Max(3, options.Interval.TotalMinutes));
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
-            var webJob = new SyncJob(null, connection.AccountId, connection.ListId, null, true);
+            var webJob = new SyncJob(shareToken, connection.AccountId, connection.ListId, connection.ProtectedTokens, true);
             db.ChangeTracker.Clear();
             return webJob;
         }

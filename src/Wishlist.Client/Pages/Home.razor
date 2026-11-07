@@ -146,7 +146,7 @@ else{
     }
     @if(integration.WebApiEnabled && !integration.Connected && !integration.Reconnect){
      <form @onsubmit="ConnectOhmywishesWeb" @onsubmit:preventDefault>
-      <label>Ссылка на ваш публичный список Ohmywishes<input type="url" maxlength="512" @bind="ohmywishesWebLink" required /></label>
+      <label>Ссылка на ваш список Ohmywishes<input type="url" maxlength="512" @bind="ohmywishesWebLink" required /></label>
       <p class="dialog-hint">Карточки из списка появятся у участников вашей компании.</p>
       <button class="soft-button" disabled="@busy">Подключить по ссылке</button>
      </form>

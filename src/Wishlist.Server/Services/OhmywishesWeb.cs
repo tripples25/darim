@@ -23,20 +23,23 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
     public async Task<PublicListSource?> Resolve(PublicListLink link, CancellationToken ct)
     {
-        var account = await PublicAccount(link.User, ct);
+        var shared = !PublicId().IsMatch(link.ListId);
+        var account = await Account(link.User, shared, ct);
         if (account == null) return null;
-        var title = await PublicList(account, link.ListId, ct);
-        return title == null ? null : new(account, link.ListId, title);
+        return await ReadList(account, link.ListId, shared, ct);
     }
 
-    public async Task<Dictionary<string, GiftInput>> Snapshot(string account, string list, CancellationToken ct)
+    public async Task<Dictionary<string, GiftInput>> Snapshot(string account, string list, CancellationToken ct, string? shareToken = null)
     {
         var snapshot = new Dictionary<string, GiftInput>(StringComparer.Ordinal);
-        if (await PublicAccount(account, ct) != account || await PublicList(account, list, ct) == null) return snapshot;
+        var shared = shareToken != null;
+        var reference = shareToken ?? list;
+        if (!await ListAvailable(account, list, reference, shared, ct)) return snapshot;
+        var wishesPath = $"users/{account}/wish-lists/{reference}/wishes-v2";
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (var offset = 0; offset < 2000; offset += PageSize)
         {
-            var page = await Get($"users/{account}/wish-lists/{list}/wishes-v2?limit={PageSize}&offset={offset}", ct);
+            var page = await Get($"{wishesPath}?limit={PageSize}&offset={offset}", ct);
             if (page == null) return [];
             var items = Field(page.Value, "items");
             if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > PageSize)
@@ -47,11 +50,21 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
             foreach (var id in ids)
             {
-                var response = await Get($"wishes/{id}", ct);
+                var response = await Get(shared ? $"{wishesPath}/{id}" : $"wishes/{id}", ct);
                 if (response == null) continue;
                 var wish = Item(response.Value);
                 if (Id(wish) != id || Id(Field(wish, "creator")) != account)
                     throw new InvalidDataException("Unexpected Ohmywishes web wish or owner ID.");
+                if (shared)
+                {
+                    // The scoped route authorizes each card using the same share token as the list.
+                    var sharedVisibility = OhmywishesMcp.String(wish, "visibility");
+                    if ((sharedVisibility is null or "public" or "inherit_public" or "by_link" or "inherit_by_link")
+                        && (!wish.TryGetProperty("isPrivate", out _) || !Flag(wish, "isPrivate"))
+                        && (!wish.TryGetProperty("isFulfilled", out _) || !Flag(wish, "isFulfilled")))
+                        snapshot.Add(id, OhmywishesMcp.ReadWishFields(wish));
+                    continue;
+                }
                 var visibility = OhmywishesMcp.String(wish, "visibility")
                     ?? throw new InvalidDataException("Missing Ohmywishes web wish visibility.");
                 if (visibility is not ("public" or "inherit_public") || Flag(wish, "isPrivate") || Flag(wish, "isFulfilled"))
@@ -63,31 +76,39 @@ public sealed partial class OhmywishesWeb(HttpClient http)
                     snapshot.Add(id, input);
             }
             // The profile or list can become private while card details are being fetched.
-            return await PublicAccount(account, ct) == account && await PublicList(account, list, ct) != null ? snapshot : [];
+            return await ListAvailable(account, list, reference, shared, ct) ? snapshot : [];
         }
         throw new InvalidDataException("Ohmywishes web list exceeded the pilot pagination limit.");
     }
 
-    private async Task<string?> PublicAccount(string user, CancellationToken ct)
+    private async Task<bool> ListAvailable(string account, string list, string reference, bool shared, CancellationToken ct) =>
+        (shared || await Account(account, false, ct) == account)
+        && (await ReadList(account, reference, shared, ct))?.ListId == list;
+
+    private async Task<string?> Account(string user, bool shared, CancellationToken ct)
     {
         var response = await Get($"users/{Uri.EscapeDataString(user)}", ct);
         if (response == null) return null;
         var profile = Item(response.Value);
-        return Flag(profile, "isPrivate") ? null : Id(profile);
+        return !shared && Flag(profile, "isPrivate") ? null : Id(profile);
     }
 
-    private async Task<string?> PublicList(string account, string list, CancellationToken ct)
+    private async Task<PublicListSource?> ReadList(string account, string reference, bool shared, CancellationToken ct)
     {
-        if (!PublicId().IsMatch(account) || !PublicId().IsMatch(list))
+        if (!PublicId().IsMatch(account) || !(shared ? ShareId().IsMatch(reference) : PublicId().IsMatch(reference)))
             throw new InvalidDataException("Invalid Ohmywishes web source IDs.");
-        var response = await Get($"users/{account}/wish-lists/{list}", ct);
+        var response = await Get($"users/{account}/wish-lists/{reference}", ct);
         if (response == null) return null;
         var item = Item(response.Value);
-        if (Id(item) != list) throw new InvalidDataException("Unexpected Ohmywishes web list ID.");
-        if (OhmywishesMcp.String(item, "visibility") is { } visibility && visibility is not ("public" or "inherit" or "inherit_public"))
+        var id = Id(item);
+        if (!shared && id != reference) throw new InvalidDataException("Unexpected Ohmywishes web list ID.");
+        var visibility = OhmywishesMcp.String(item, "visibility");
+        if (visibility is not (null or "public" or "inherit" or "inherit_public")
+            && !(shared && visibility == "by_link"))
             return null;
-        return OhmywishesMcp.String(item, "title") is { Length: > 0 and <= 200 } title
-            ? title : throw new InvalidDataException("Invalid Ohmywishes web list title.");
+        var title = OhmywishesMcp.String(item, "title") is { Length: > 0 and <= 200 } name
+            ? name : throw new InvalidDataException("Invalid Ohmywishes web list title.");
+        return new(account, id, title, shared ? reference : null);
     }
 
     private async Task<JsonElement?> Get(string path, CancellationToken ct)
@@ -115,12 +136,17 @@ public sealed partial class OhmywishesWeb(HttpClient http)
         _ => throw new InvalidDataException($"Invalid Ohmywishes web field: {name}.")
     };
 
-    [GeneratedRegex(@"^/users/([A-Za-z0-9_][A-Za-z0-9_.-]{0,79})/lists/([a-f0-9]{24})/?$")]
+    private const string SharePattern = "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}";
+
+    [GeneratedRegex(@"^/users/([A-Za-z0-9_][A-Za-z0-9_.-]{0,79})/lists/([a-f0-9]{24}|" + SharePattern + @")/?$")]
     private static partial Regex ListPath();
 
     [GeneratedRegex(@"^[a-f0-9]{24}$")]
     private static partial Regex PublicId();
 
+    [GeneratedRegex("^" + SharePattern + "$")]
+    private static partial Regex ShareId();
+
     public sealed record PublicListLink(string User, string ListId);
-    public sealed record PublicListSource(string AccountId, string ListId, string Title);
+    public sealed record PublicListSource(string AccountId, string ListId, string Title, string? ShareToken);
 }

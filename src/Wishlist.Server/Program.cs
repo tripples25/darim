@@ -22,6 +22,7 @@ builder.Services.AddHttpClient<OhmywishesOAuth>(client=>client.Timeout=TimeSpan.
 builder.Services.AddHttpClient<OhmywishesMcp>(client=>client.Timeout=TimeSpan.FromSeconds(15))
  .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.Services.AddHttpClient<OhmywishesWeb>(client=>client.Timeout=TimeSpan.FromSeconds(15))
+ .RemoveAllLoggers()
  .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.AddSessions();builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(o=>{o.HeaderName="X-CSRF-TOKEN";o.Cookie.Name="wishlist.csrf";o.Cookie.SecurePolicy=builder.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;});

@@ -85,6 +85,11 @@ public sealed class OhmywishesMcp(HttpClient http)
     {
         if (!Shareable(detail) || (Property(detail, out var fulfilled, "isFulfilled", "fulfilled")
             && fulfilled.ValueKind == JsonValueKind.True)) return null;
+        return ReadWishFields(detail);
+    }
+
+    internal static GiftInput ReadWishFields(JsonElement detail)
+    {
         var title = RequiredString(detail, "title").Trim();
         var description = String(detail, "description")?.Trim();
         var link = String(detail, "url", "externalUri", "link")?.Trim();
