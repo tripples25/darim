@@ -1,6 +1,6 @@
 https://ci.hype-ny.ru {
     encode zstd gzip
-    reverse_proxy darim-ci-server-1:8000
+    reverse_proxy woodpecker-coolify:8000
     header -Server
 }
 

@@ -1,7 +1,7 @@
-name: darim-ci
 services:
   server:
     image: woodpeckerci/woodpecker-server:v3.20.1
+    pull_policy: never
     restart: unless-stopped
     environment:
       WOODPECKER_HOST: https://ci.hype-ny.ru
@@ -10,14 +10,18 @@ services:
       WOODPECKER_REPO_OWNERS: tripples25
       WOODPECKER_GITHUB: 'true'
       WOODPECKER_GITHUB_PUBLIC_ONLY: 'true'
-      WOODPECKER_GITHUB_CLIENT: ${WOODPECKER_GITHUB_CLIENT:?Required}
-      WOODPECKER_GITHUB_SECRET: ${WOODPECKER_GITHUB_SECRET:?Required}
-      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:?Required}
+      WOODPECKER_GITHUB_CLIENT: ${WOODPECKER_GITHUB_CLIENT}
+      WOODPECKER_GITHUB_SECRET: ${WOODPECKER_GITHUB_SECRET}
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
     volumes:
       - server_data:/var/lib/woodpecker
-    networks: [control, edge]
+    networks:
+      default: {}
+      edge:
+        aliases: [woodpecker-coolify]
   worker-docker:
     image: docker:27-dind
+    pull_policy: never
     restart: unless-stopped
     privileged: true
     command: [dockerd, '--host=unix:///run/ci/docker.sock']
@@ -27,28 +31,34 @@ services:
     volumes:
       - worker_data:/var/lib/docker
       - worker_socket:/run/ci
-    networks: [control]
   agent:
     image: woodpeckerci/woodpecker-agent:v3.20.1
-    command: agent
+    pull_policy: never
     restart: unless-stopped
+    command: agent
     depends_on: [server, worker-docker]
     environment:
       WOODPECKER_SERVER: server:9000
-      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:?Required}
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
       WOODPECKER_BACKEND_DOCKER_HOST: unix:///run/ci/docker.sock
       WOODPECKER_MAX_WORKFLOWS: '1'
     volumes:
       - agent_data:/etc/woodpecker
       - worker_socket:/run/ci
-    networks: [control]
 networks:
-  control:
   edge:
-    name: darim-edge
     external: true
+    name: darim-edge
 volumes:
   server_data:
+    external: true
+    name: darim-ci_server_data
   agent_data:
+    external: true
+    name: darim-ci_agent_data
   worker_data:
+    external: true
+    name: darim-ci_worker_data
   worker_socket:
+    external: true
+    name: darim-ci_worker_socket

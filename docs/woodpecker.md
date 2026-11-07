@@ -2,10 +2,13 @@
 
 Приложение: https://wishes.hype-ny.ru. CI: https://ci.hype-ny.ru.
 
-Конфигурация CI находится в `ops/woodpecker/`. Она установлена на сервере
-в `/opt/woodpecker`; `.env` с OAuth-данными и случайным agent secret хранится
-только там с правами 600. Не коммитить этот файл и не выводить `compose config`
-без `--quiet`: раскрываются секреты.
+Woodpecker управляется в Coolify: CI → production → Woodpecker.
+Compose-определение хранится в `ops/woodpecker/compose.yaml`; рабочие
+переменные, включая OAuth и секрет агента, хранятся в Coolify. Сервис
+использует существующие внешние тома `darim-ci_server_data`,
+`darim-ci_agent_data`, `darim-ci_worker_data` и `darim-ci_worker_socket`.
+Старые контейнеры в `/opt/woodpecker` оставлены для отката. Их нельзя
+запускать одновременно с сервисом Coolify, поскольку тома общие.
 
 Woodpecker 3.20.1 использует SQLite в постоянном Docker volume. Регистрация
 закрыта, администратор — tripples25. Только публичные репозитории этого
