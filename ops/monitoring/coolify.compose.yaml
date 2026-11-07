@@ -1,0 +1,37 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - /opt/darim-monitoring/source/ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/darim-monitoring/targets.yml:/etc/prometheus/targets.yml:ro
+      - /opt/darim-monitoring/secrets/scrape-token:/run/secrets/scrape_token:ro
+      - prometheus-data:/prometheus
+    networks: [default, darim-edge]
+  grafana:
+    image: grafana/grafana:13.3.0
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.hype-ny.ru/
+      GF_SECURITY_COOKIE_SECURE: 'true'
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - /opt/darim-monitoring/source/ops/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /opt/darim-monitoring/source/ops/monitoring/grafana/dashboards:/var/lib/grafana-dashboards:ro
+      - /opt/darim-monitoring/secrets/grafana-password:/run/secrets/grafana_password:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      default:
+      darim-edge:
+        aliases: [darim-monitoring-grafana]
+networks:
+  darim-edge:
+    external: true
+volumes:
+  prometheus-data:
+  grafana-data:

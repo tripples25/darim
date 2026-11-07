@@ -1,0 +1,5 @@
+https://grafana.hype-ny.ru {
+    encode zstd gzip
+    reverse_proxy darim-monitoring-grafana:3000
+    header -Server
+}

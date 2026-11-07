@@ -31,15 +31,15 @@ DARIM_MONITORING_TOKEN="$(cat "$secrets/scrape-token")" \
 
 Сначала примените блок `@metrics` из [публичного маршрута](../ops/coolify/routes.caddy) в Dynamic Configurations Caddy для Darim. На сервисе `app` в Compose Coolify добавьте переменную окружения `Monitoring__Token: ${DARIM_MONITORING_TOKEN:-}`. Задайте `DARIM_MONITORING_TOKEN` значением из `scrape-token` в настройках окружения сервиса. Если в `AllowedHosts` перечислены разрешённые хосты, добавьте к существующему списку `darim-coolify-app` через `;`. Примените настройки сервиса с образом Darim, поддерживающим `/metrics`.
 
-Prometheus подключается к `darim-edge`, где приложение уже доступно под именем `darim-coolify-app`. Файл целей содержит внутренний адрес и не содержит секретов.
+Для Coolify используйте `secrets=/opt/darim-monitoring/secrets` в командах подготовки. Разместите проверенную версию репозитория в `/opt/darim-monitoring/source` и создайте отдельный сервис `Darim Monitoring` с [Compose для Coolify](../ops/monitoring/coolify.compose.yaml). Prometheus подключается к `darim-edge`, где приложение доступно под именем `darim-coolify-app`.
 
 ```sh
-printf '%s\n' '- targets: [darim-coolify-app:8080]' > "$secrets/targets.yml"
-export DARIM_MONITORING_NETWORK=darim-edge
-export DARIM_PROMETHEUS_TARGETS_FILE="$secrets/targets.yml"
+printf '%s\n' '- targets: [darim-coolify-app:8080]' > /opt/darim-monitoring/targets.yml
 ```
 
-### Запуск Prometheus и Grafana
+Добавьте A-запись `grafana.hype-ny.ru` на сервер Coolify и примените [маршрут Grafana](../ops/coolify/darim-monitoring.caddy) в Dynamic Configurations Caddy. Grafana и Prometheus не публикуют порты на хосте. Вход в Grafana доступен по HTTPS, учётная запись `admin` получает начальный пароль из `/opt/darim-monitoring/secrets/grafana-password`.
+
+### Запуск Prometheus и Grafana в обычном Docker Compose
 
 ```sh
 export DARIM_SCRAPE_TOKEN_FILE="$secrets/scrape-token"
