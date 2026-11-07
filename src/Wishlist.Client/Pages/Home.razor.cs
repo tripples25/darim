@@ -7,6 +7,8 @@ namespace Wishlist.Client.Pages;
 public partial class Home {
  bool ready,busy,showArchived;string? error,dialog,inviteLink,miniInviteLink;string tab="all",ownerFilter="",search="",occasion="",availability="",priceFilter="";
  AuthInfoDto? info;MeDto? me;GiftDto[] gifts=[];NoticeDto[] notices=[];GiftDto? selected;
+ OhmywishesStatusDto? ohmywishes;OhmywishesListDto[]? ohmywishesLists;string ohmywishesSelection="";
+ string ohmywishesWebLink="";
  string editTitle="",editUrl="",editComment="",editOccasion="Без повода",editCustomOccasion="";decimal? editPrice;DateTime? editDate;
  string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
  readonly string[] demoNames=["Юлия","Макс","Аня","Саша"];
@@ -31,10 +33,29 @@ public partial class Home {
    try{me=await Api.Get<MeDto>("api/me");}catch(Services.ApiException e)when(e.Status==HttpStatusCode.Unauthorized){me=null;}
    if(me!=null&&joinToken!=""){await Api.Change("api/company/join",new JoinCompanyInput(joinToken));await JS.InvokeVoidAsync("wishlist.clearInvite");joinToken="";me=await Api.Get<MeDto>("api/me");}
    await Load();
+   if(me!=null && launch.Ohmywishes is "connected" or "failed" or "profile"){
+    await OpenProfile();
+    if(launch.Ohmywishes=="failed")error="Не удалось подключить Ohmywishes. Попробуйте ещё раз.";
+   }
   }catch(Exception e)when(e is HttpRequestException or Services.ApiException or JSException){error=e.Message;}
   finally{ready=true;StateHasChanged();}
  }
- async Task Load(){if(me==null)return;me=await Api.Get<MeDto>("api/me");if(me.Company!=null){gifts=await Api.Get<GiftDto[]>("api/gifts");notices=await Api.Get<NoticeDto[]>("api/notices");if(selected!=null)selected=gifts.FirstOrDefault(g=>g.Id==selected.Id)??selected;}}
+ async Task Load(){
+  if(me==null)return;
+  me=await Api.Get<MeDto>("api/me");
+  if(me.Company==null)return;
+  gifts=await Api.Get<GiftDto[]>("api/gifts");
+  if(selected!=null){
+   var updated=gifts.FirstOrDefault(g=>g.Id==selected.Id);
+   if(updated==null && selected.FromOhmywishes){
+    selected=null;
+    if(dialog is "details" or "split" or "confirm")await CloseDialog();
+   }
+   else selected=updated??selected;
+  }
+  notices=await Api.Get<NoticeDto[]>("api/notices");
+  if(dialog=="profile")ohmywishes=await Api.Get<OhmywishesStatusDto>("api/ohmywishes");
+ }
  async Task Refresh(){if(busy)return;try{error=null;await Load();}catch(Exception e)when(e is HttpRequestException or Services.ApiException){error=e.Message;}StateHasChanged();}
  [JSInvokable]public Task RefreshFromFocus()=>Refresh();
  async Task Poll(){using var timer=new PeriodicTimer(TimeSpan.FromSeconds(25));try{while(await timer.WaitForNextTickAsync(lifetime.Token)){if(me?.Company!=null)await InvokeAsync(Refresh);}}catch(OperationCanceledException){}}
@@ -55,7 +76,35 @@ public partial class Home {
  async Task StartSplit()=>await Run(()=>Api.Change($"api/gifts/{selected!.Id}/actions",new GiftActionInput("split",splitSlots)),true);
  async Task Transfer()=>await Run(()=>Api.Change($"api/gifts/{selected!.Id}/actions",new GiftActionInput("transfer",UserId:Guid.Parse(transferTo))),true);
  async Task LogoutFromProfile(){await CloseDialog();await Logout();}
- async Task OpenProfile(){profileName=me!.User.Name;profileContact=me.User.Contact??"";await Show("profile");}
+ async Task OpenProfile(){
+  profileName=me!.User.Name;profileContact=me.User.Contact??"";
+  ohmywishes=null;ohmywishesLists=null;ohmywishesWebLink="";
+  await Show("profile");
+  if(me.Company==null)return;
+  try{ohmywishes=await Api.Get<OhmywishesStatusDto>("api/ohmywishes");}
+  catch(Exception ex)when(ex is HttpRequestException or Services.ApiException){error=ex.Message;}
+ }
+ async Task ConnectOhmywishes()=>await Run(async()=>{
+  var authorization=await Api.Post<OhmywishesAuthorization>("api/ohmywishes/connect");
+  Navigation.NavigateTo(authorization.Url,forceLoad:true);
+ });
+ async Task OpenOhmywishesInBrowser()=>await JS.InvokeVoidAsync("wishlist.openExternal",Navigation.BaseUri+"?ohmywishes=profile");
+ async Task ConnectOhmywishesWeb()=>await Run(async()=>{
+  await Api.Change("api/ohmywishes/web-connect",new OhmywishesWebSelection(ohmywishesWebLink));
+  ohmywishesWebLink="";
+ });
+ async Task LoadOhmywishesLists()=>await Run(async()=>{
+  ohmywishesLists=await Api.Get<OhmywishesListDto[]>("api/ohmywishes/lists");
+  ohmywishesSelection=ohmywishes?.ListId??"";
+ });
+ async Task SelectOhmywishesList()=>await Run(async()=>{
+  await Api.Change("api/ohmywishes/list",new OhmywishesSelection(ohmywishesSelection),put:true);
+  ohmywishesLists=null;
+ });
+ async Task DisconnectOhmywishes()=>await Run(async()=>{
+  await Api.Change("api/ohmywishes/disconnect");
+  ohmywishesLists=null;
+ });
  async Task SaveProfile()=>await Run(async()=>{await Api.Change("api/profile",new ProfileInput(profileName,profileContact),true);me=await Api.Get<MeDto>("api/me");Snackbar.Add("Профиль сохранён",Severity.Success);},true);
  async Task CreateCompany()=>await Run(async()=>{var invitation=await Api.Post<InviteDto>("api/company",new CreateCompanyInput(companyName));me=await Api.Get<MeDto>("api/me");issuedInviteLimit=1;SetInvite(invitation.Token);await Show("invite");});
  async Task JoinCompany()=>await Run(async()=>{var token=joinToken.Trim();if(Uri.TryCreate(token,UriKind.Absolute,out var uri)){var match=System.Text.RegularExpressions.Regex.Match(uri.Query,@"(?:invite=|startapp=join_)([a-zA-Z0-9_-]+)");token=match.Success?match.Groups[1].Value:token;}await Api.Change("api/company/join",new JoinCompanyInput(token));await JS.InvokeVoidAsync("wishlist.clearInvite");me=await Api.Get<MeDto>("api/me");});
@@ -65,5 +114,5 @@ public partial class Home {
  async Task Copy(string text){try{await JS.InvokeVoidAsync("wishlist.copy",text);Snackbar.Add("Ссылка скопирована",Severity.Success);}catch(JSException){Snackbar.Add("Выделите и скопируйте ссылку вручную.",Severity.Info);}}
  async Task OpenNotices(){await Show("notices");await Run(async()=>{await Api.Change("api/notices/read");});}
  public async ValueTask DisposeAsync(){await lifetime.CancelAsync();if(polling!=null)await polling;reference?.Dispose();lifetime.Dispose();}
- public record LaunchInfo(string InitData,string Invite);
+ public record LaunchInfo(string InitData,string Invite,string? Ohmywishes=null);
 }

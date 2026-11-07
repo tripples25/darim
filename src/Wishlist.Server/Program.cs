@@ -14,6 +14,15 @@ using Wishlist.Server.Services;
 var builder=WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDb>(o=>o.UseNpgsql(builder.Configuration.GetConnectionString("Database")??throw new InvalidOperationException("Set ConnectionStrings__Database.")));
 builder.Services.AddScoped<GiftService>();builder.Services.AddScoped<AccountService>();
+builder.Services.AddSingleton<OhmywishesOptions>();
+builder.Services.AddScoped<OhmywishesSync>();
+builder.Services.AddHostedService<OhmywishesWorker>();
+builder.Services.AddHttpClient<OhmywishesOAuth>(client=>client.Timeout=TimeSpan.FromSeconds(15))
+ .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
+builder.Services.AddHttpClient<OhmywishesMcp>(client=>client.Timeout=TimeSpan.FromSeconds(15))
+ .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
+builder.Services.AddHttpClient<OhmywishesWeb>(client=>client.Timeout=TimeSpan.FromSeconds(15))
+ .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.AddSessions();builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(o=>{o.HeaderName="X-CSRF-TOKEN";o.Cookie.Name="wishlist.csrf";o.Cookie.SecurePolicy=builder.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;});
 builder.Services.AddOpenApi();builder.Services.AddDataProtection().SetApplicationName("wishlist");
@@ -88,6 +97,41 @@ if(demo)app.MapPost("/auth/demo/{index:int}",async(int index,HttpContext ctx,App
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method is not("GET" or "HEAD" or "OPTIONS")&&!ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase))await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 static Guid UserId(HttpContext ctx)=>Guid.TryParse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier),out var id)?id:throw new RuleException("Войдите снова.",401);
+app.MapGet(OhmywishesOptions.CallbackPath,async(HttpContext ctx,OhmywishesOAuth oauth,OhmywishesSync sync)=>{
+ ctx.Response.Headers["Referrer-Policy"]="no-referrer";
+ var browser=await ctx.AuthenticateAsync("Cookies");
+ if(!browser.Succeeded || !Guid.TryParse(browser.Principal?.FindFirstValue(ClaimTypes.NameIdentifier),out var id))
+  return Results.Redirect("/?ohmywishes=failed");
+ try{
+  var (attempt,tokens)=await oauth.Complete(ctx,id,ctx.RequestAborted);
+  await sync.Connect(id,attempt,tokens,ctx.RequestAborted);
+  return Results.Redirect("/?ohmywishes=connected");
+ }catch(Exception ex)when(OhmywishesSync.IsProviderFailure(ex,ctx.RequestAborted)||ex is RuleException){
+  return Results.Redirect("/?ohmywishes=failed");
+ }
+}).RequireRateLimiting("auth");
+api.MapGet("/ohmywishes",(HttpContext ctx,OhmywishesSync sync)=>sync.Status(UserId(ctx),ctx.RequestAborted));
+api.MapPost("/ohmywishes/connect",async(HttpContext ctx,OhmywishesSync sync,OhmywishesOAuth oauth)=>{
+ var id=UserId(ctx);
+ var browser=await ctx.AuthenticateAsync("Cookies");
+ if(ctx.User.Identity?.AuthenticationType!="Cookies" || !browser.Succeeded)
+  throw new RuleException("Подключите Ohmywishes в браузере.",403);
+ var attempt=await sync.BeginAuthorization(id,ctx.RequestAborted);
+ return new OhmywishesAuthorization(oauth.Start(ctx,id,attempt));
+}).RequireRateLimiting("auth");
+api.MapPost("/ohmywishes/web-connect",async(HttpContext ctx,OhmywishesWebSelection input,OhmywishesSync sync)=>{
+ await sync.ConnectWeb(UserId(ctx),input.Url,ctx.RequestAborted);
+ return Results.NoContent();
+}).RequireRateLimiting("auth");
+api.MapGet("/ohmywishes/lists",(HttpContext ctx,OhmywishesSync sync)=>sync.Lists(UserId(ctx),ctx.RequestAborted));
+api.MapPut("/ohmywishes/list",async(HttpContext ctx,OhmywishesSelection input,OhmywishesSync sync)=>{
+ await sync.Select(UserId(ctx),input.ListId,ctx.RequestAborted);
+ return Results.NoContent();
+});
+api.MapPost("/ohmywishes/disconnect",async(HttpContext ctx,OhmywishesSync sync)=>{
+ await sync.Disconnect(UserId(ctx),ctx.RequestAborted);
+ return Results.NoContent();
+});
 api.MapGet("/csrf",(HttpContext ctx,IAntiforgery csrf)=>new CsrfDto(csrf.GetAndStoreTokens(ctx).RequestToken!));
 api.MapGet("/me",(HttpContext ctx,AccountService svc)=>svc.Me(UserId(ctx)));
 api.MapPut("/profile",async(HttpContext ctx,ProfileInput input,AccountService svc)=>{await svc.Profile(UserId(ctx),input);return Results.NoContent();});

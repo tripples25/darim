@@ -9,6 +9,18 @@ public class ComponentTests:BunitContext {
  [Fact] public void OwnGiftNeverRendersReservationButtons(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга",Occasion:"Новый год"),false,null);var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g).Add(x=>x.IsOwner,true));Assert.Contains("Брони скрыты от вас",card.Markup);Assert.DoesNotContain("Подарю сам",card.Markup);Assert.DoesNotContain("Распилить",card.Markup);Assert.Contains("Новый год",card.Markup);}
  [Fact] public void FreeGiftOffersBothModes(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("free",false,0,0,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.Contains("Подарю сам",card.Markup);Assert.Contains("Распилить",card.Markup);}
  [Fact] public void FullSplitDoesNotOfferJoin(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("split",false,2,2,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.DoesNotContain("Занять одну долю",card.Markup);Assert.Contains("Занято 2 из 2",card.Markup);}
+ [Fact]
+ public void ImportedGiftShowsItsSourceAndOnlyOffersActionsToDonors()
+ {
+  var gift=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,null,FromOhmywishes:true);
+  var owner=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift).Add(x=>x.IsOwner,true));
+  Assert.Contains("Редактируется в Ohmywishes",owner.Markup);
+  Assert.Empty(owner.FindAll("button"));
+  var donor=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift with { Participation=new("free",false,0,0,false,false,null) }));
+  Assert.Contains("Ohmywishes",donor.Markup);
+  Assert.Contains("Подарю сам",donor.Markup);
+  Assert.Contains("Распилить",donor.Markup);
+ }
 }
 
 public class MembershipRefreshTests:BunitContext {

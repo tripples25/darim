@@ -57,6 +57,12 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<DateOnly?>("OccasionDate")
                         .HasColumnType("date");
 
+                    b.Property<bool>("OhmywishesHidden")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OhmywishesKey")
+                        .HasColumnType("text");
+
                     b.Property<string>("OriginalJson")
                         .HasColumnType("text");
 
@@ -82,9 +88,10 @@ namespace Wishlist.Server.Data.Migrations
 
                     b.HasIndex("DonorId");
 
-                    b.HasIndex("OwnerId");
-
                     b.HasIndex("CompanyId", "OwnerId");
+
+                    b.HasIndex("OwnerId", "OhmywishesKey")
+                        .IsUnique();
 
                     b.ToTable("Gifts", t =>
                         {
@@ -125,6 +132,9 @@ namespace Wishlist.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("OhmywishesAttempt")
+                        .HasColumnType("uuid");
 
                     b.Property<long>("TelegramId")
                         .HasColumnType("bigint");
@@ -195,6 +205,32 @@ namespace Wishlist.Server.Data.Migrations
                     b.HasIndex("UserId", "Created");
 
                     b.ToTable("Notices");
+                });
+
+            modelBuilder.Entity("Wishlist.Server.Data.OhmywishesConnection", b =>
+                {
+                    b.Property<Guid>("UserId").HasColumnType("uuid");
+                    b.Property<Guid>("Revision").HasColumnType("uuid");
+                    b.Property<string>("AccountId").IsRequired().HasColumnType("text");
+                    b.Property<string>("ProtectedTokens").HasColumnType("text");
+                    b.Property<string>("ListId").HasColumnType("text");
+                    b.Property<string>("ListTitle").HasColumnType("text");
+                    b.Property<DateTimeOffset?>("NextSync").HasColumnType("timestamp with time zone");
+                    b.Property<DateTimeOffset?>("LastSuccess").HasColumnType("timestamp with time zone");
+                    b.Property<bool>("Stale").HasColumnType("boolean");
+                    b.Property<bool>("WebApi").HasColumnType("boolean");
+                    b.HasKey("UserId");
+                    b.HasIndex("NextSync");
+                    b.ToTable("OhmywishesConnections");
+                });
+
+            modelBuilder.Entity("Wishlist.Server.Data.OhmywishesConnection", b =>
+                {
+                    b.HasOne("Wishlist.Server.Data.AppUser", null)
+                        .WithOne()
+                        .HasForeignKey("Wishlist.Server.Data.OhmywishesConnection", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Wishlist.Core.Gift", b =>

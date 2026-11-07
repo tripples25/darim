@@ -4,7 +4,12 @@ public record CompanyDto(Guid Id, string Name, bool IsOrganizer, PersonDto[] Mem
 public record MeDto(PersonDto User, CompanyDto? Company);
 public record GiftInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null, string Occasion = "Без повода", DateOnly? OccasionDate = null);
 public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null);
-public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null);
+public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null, bool FromOhmywishes = false);
+public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false);
+public record OhmywishesListDto(string Id, string Title);
+public record OhmywishesSelection(string ListId);
+public record OhmywishesAuthorization(string Url);
+public record OhmywishesWebSelection(string Url);
 public record NoticeDto(Guid Id, string Text, DateTimeOffset Created, bool Read);
 public record CreateCompanyInput(string Name);
 public record InviteDto(string Token);

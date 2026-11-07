@@ -9,6 +9,8 @@ public class Gift {
  public string Occasion {get;set;} = "Без повода"; public DateOnly? OccasionDate {get;set;} public bool Archived {get;set;}
  public string Mode {get;set;} = "free"; public Guid? DonorId {get;set;} public int Slots {get;set;} public bool Bought {get;set;}
  public string? OriginalJson {get;set;} public DateTimeOffset Created {get;set;} = DateTimeOffset.UtcNow;
+ public string? OhmywishesKey {get;set;}
+ public bool OhmywishesHidden {get;set;}
  public List<GiftShare> Shares {get;set;} = [];
  public GiftInput Details => new(Title,Url,Price,Comment,Occasion,OccasionDate);
  public static Gift New(Guid companyId, Guid ownerId, GiftInput input) { var g=new Gift { CompanyId=companyId,OwnerId=ownerId }; g.Edit(ownerId,input);return g; }
@@ -53,11 +55,11 @@ public class Gift {
  }
  void Snapshot() => OriginalJson=JsonSerializer.Serialize(Details);
  public GiftDto View(Guid viewer, IReadOnlyDictionary<Guid,PersonDto> people) {
-  if(viewer==OwnerId)return new(Id,people[OwnerId] with {Contact=null},Details,Archived,null);
+  if(viewer==OwnerId)return new(Id,people[OwnerId] with {Contact=null},Details,Archived,null,FromOhmywishes:OhmywishesKey!=null);
   var mine=DonorId==viewer || Shares.Any(x=>x.UserId==viewer);
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
    Mode=="split" && mine ? Shares.Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null);
-  return new(Id,people[OwnerId] with {Contact=null},Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null);
+  return new(Id,people[OwnerId] with {Contact=null},Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,OhmywishesKey!=null);
  }
  static void Require(bool condition,string message,int status=409) {if(!condition)throw new RuleException(message,status);}
  public Guid[] Donors() => Shares.Select(x=>x.UserId).Concat(DonorId is {} d ? [d] : Array.Empty<Guid>()).Distinct().ToArray();

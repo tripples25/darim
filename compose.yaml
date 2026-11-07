@@ -29,6 +29,13 @@ services:
       Telegram__BotUsername: ${TELEGRAM_BOT_USERNAME:-}
       Telegram__ClientId: ${TELEGRAM_CLIENT_ID:-}
       Telegram__ClientSecret: ${TELEGRAM_CLIENT_SECRET:-}
+      Ohmywishes__ClientId: ${OHMYWISHES_CLIENT_ID:-}
+      Ohmywishes__ClientSecret: ${OHMYWISHES_CLIENT_SECRET:-}
+      Ohmywishes__TokenAuthMethod: ${OHMYWISHES_TOKEN_AUTH_METHOD:-client_secret_basic}
+      Ohmywishes__RedirectUri: ${OHMYWISHES_REDIRECT_URI:-}
+      Ohmywishes__IntervalMinutes: ${OHMYWISHES_INTERVAL_MINUTES:-30}
+      Ohmywishes__WebApiEnabled: ${OHMYWISHES_WEB_API_ENABLED:-false}
+      Ohmywishes__WebApiTelegramId: ${OHMYWISHES_WEB_API_TELEGRAM_ID:-}
       DataProtection__Path: /keys
       Proxy__Address: 172.28.44.2
       AllowedHosts: ${DOMAIN:?Set DOMAIN}

@@ -1,6 +1,6 @@
 <article class="gift-card @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
  <div class="gift-content">
-  <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>}</div>
+  <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>} @if(Gift.FromOhmywishes){<span>· Ohmywishes</span>}</div>
   <h3>@Gift.Details.Title</h3>
   @if (!string.IsNullOrWhiteSpace(Gift.Details.Comment)) {
    <p class="gift-note">@Gift.Details.Comment</p>
@@ -16,7 +16,8 @@
   }
   else if(P?.Mode=="solo"){<div class="state-line"><MudIcon Icon="@(P.Bought?Icons.Material.Outlined.CheckCircle:Icons.Material.Outlined.Lock)" Size="Size.Small" /> @(P.IsMine?(P.Bought?"Вы купили этот подарок":"Вы дарите этот подарок"):"Кто-то уже дарит")</div>}
   <div class="card-actions">
-   @if(!Gift.Archived && IsOwner){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button><button class="icon-button" aria-label="Отправить в архив" title="Отправить в архив" @onclick='()=>OnAction.InvokeAsync("archive")'><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></button>}
+   @if(!Gift.Archived && IsOwner && Gift.FromOhmywishes){<span class="quiet-note">Редактируется в Ohmywishes</span>}
+   else if(!Gift.Archived && IsOwner){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button><button class="icon-button" aria-label="Отправить в архив" title="Отправить в архив" @onclick='()=>OnAction.InvokeAsync("archive")'><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></button>}
    else if(!Gift.Archived && P?.Mode=="free"){
     <button class="primary-button" @onclick='()=>OnAction.InvokeAsync("reserve")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" Size="Size.Small" /> Подарю сам</button>
     <button class="soft-button" @onclick='()=>OnAction.InvokeAsync("split")'>Распилить</button>
