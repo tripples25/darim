@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Antiforgery;
@@ -20,10 +21,53 @@ if(builder.Configuration["DataProtection:Path"] is {} keys)builder.Services.AddD
 builder.Services.AddRateLimiter(o=>{o.RejectionStatusCode=429;o.AddPolicy("auth",ctx=>RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString()??"unknown",_=>new(){PermitLimit=30,Window=TimeSpan.FromMinutes(1),QueueLimit=0}));});
 builder.Services.Configure<ForwardedHeadersOptions>(o=>{o.ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto; /* Kestrel is private behind the local proxy; configure its address explicitly. */if(System.Net.IPAddress.TryParse(builder.Configuration["Proxy:Address"],out var ip))o.KnownProxies.Add(ip);});
 var app=builder.Build();
-if(args.Contains("--migrate")){await using var scope=app.Services.CreateAsyncScope();await scope.ServiceProvider.GetRequiredService<AppDb>().Database.MigrateAsync();return;}
+if (args.Contains("--migrate"))
+{
+    var started = Stopwatch.GetTimestamp();
+    app.Logger.LogInformation("Database migration started");
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<AppDb>().Database.MigrateAsync();
+    app.Logger.LogInformation("Database migration completed in {ElapsedMs:F1} ms", Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    return;
+}
 var demo=app.Environment.IsDevelopment()&&app.Configuration.GetValue<bool>("Demo:Enabled");
 if(demo){await using var scope=app.Services.CreateAsyncScope();var db=scope.ServiceProvider.GetRequiredService<AppDb>();await db.Database.MigrateAsync();await DemoData.Seed(db);}
 app.UseForwardedHeaders();
+var requestLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Darim.Http");
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var health = path.Equals("/health", StringComparison.OrdinalIgnoreCase);
+    if (!health && !path.StartsWithSegments("/api") && !path.StartsWithSegments("/auth") && !path.Equals("/logout"))
+    {
+        await next();
+        return;
+    }
+
+    var started = Stopwatch.GetTimestamp();
+    var status = StatusCodes.Status500InternalServerError;
+    try
+    {
+        await next();
+        status = context.Response.StatusCode;
+    }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        status = 499;
+        throw;
+    }
+    finally
+    {
+        if (!health || status >= 400)
+        {
+            var route = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText
+                ?? (health ? "/health" : "<unmatched>");
+            var level = status >= 500 ? LogLevel.Error : status == 429 ? LogLevel.Warning : LogLevel.Information;
+            requestLogger.Log(level, "{Method} {Route} responded {StatusCode} in {ElapsedMs:F1} ms (request {RequestId})",
+                context.Request.Method, route, status, Stopwatch.GetElapsedTime(started).TotalMilliseconds, context.TraceIdentifier);
+        }
+    }
+});
 app.Use(async(ctx,next)=>{
  ctx.Response.Headers["X-Content-Type-Options"]="nosniff";ctx.Response.Headers["Referrer-Policy"]="strict-origin-when-cross-origin";
  if(ctx.Request.Path.StartsWithSegments("/api")||ctx.Request.Path.StartsWithSegments("/auth"))ctx.Response.Headers.CacheControl="no-store";
