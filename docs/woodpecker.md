@@ -18,7 +18,13 @@ worker работает в privileged-контейнере. Непроверен
 получать privileged-доступ, volumes или секреты деплоя. Для автоматических
 тестов произвольных внешних PR нужен отдельный worker-хост.
 
-Caddy из CI-стека занимает порты 80/443 и обслуживает CI и Darim. Он подключён к внешней сети Coolify для панели управления. Для доступа к панели через HTTPS нужна DNS-запись coolify.hype-ny.ru, указывающая на VPS. Production Darim подключён к darim-edge и доступен через внешний Caddy.
+Порты 80/443 и HTTPS обслуживает встроенный Caddy в Coolify. Панель доступна
+на coolify.hype-ny.ru. Маршруты CI и Darim хранятся в Dynamic Configurations
+прокси Coolify (routes.caddy). Сеть darim-edge внешняя для Woodpecker:
+она связывает встроенный Caddy, CI и production Darim. Встроенный прокси
+использует на ней адрес 172.28.45.2, которому доверяет Darim.
+При развёртывании CI на новом сервере эту сеть создают заранее:
+`docker network create --subnet 172.28.45.0/24 darim-edge`.
 
 ## Пайплайн
 

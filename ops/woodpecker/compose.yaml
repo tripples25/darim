@@ -42,30 +42,13 @@ services:
       - agent_data:/etc/woodpecker
       - worker_socket:/run/ci
     networks: [control]
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports: ['80:80', '443:443']
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      edge:
-        ipv4_address: 172.28.45.2
-      coolify: {}
 networks:
-  coolify:
-    external: true
   control:
   edge:
     name: darim-edge
-    ipam:
-      config: [{subnet: 172.28.45.0/24}]
+    external: true
 volumes:
   server_data:
   agent_data:
   worker_data:
   worker_socket:
-  caddy_data:
-  caddy_config:
