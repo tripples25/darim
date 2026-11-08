@@ -72,8 +72,43 @@ public class OhmywishesWebTests
         using var http = new HttpClient(handler);
         var web = new OhmywishesWeb(http);
         var link = OhmywishesWeb.ParseLink($"https://ohmywishes.com/users/dream/lists/{Shared}")!;
-        var error = await Assert.ThrowsAsync<HttpRequestException>(() => web.Resolve(link, default));
+        var error = await Assert.ThrowsAnyAsync<HttpRequestException>(() => web.Resolve(link, default));
         Assert.Equal(HttpStatusCode.Forbidden, error.StatusCode);
+    }
+
+    [Fact]
+    public async Task SharedListRetriesTemporaryPageFailure()
+    {
+        using var handler = new WebHandler { UnavailablePages = 1 };
+        using var http = new HttpClient(handler);
+        var web = new OhmywishesWeb(http);
+        var snapshot = await web.Snapshot(Account, List, default, Shared);
+        Assert.Single(snapshot);
+        Assert.Equal(2, handler.PageRequests);
+        Assert.Equal(0, handler.GlobalWishRequests);
+    }
+
+    [Fact]
+    public async Task SharedListStopsAfterThreeFailedPageRequests()
+    {
+        using var handler = new WebHandler { UnavailablePages = 5 };
+        using var http = new HttpClient(handler);
+        var web = new OhmywishesWeb(http);
+        var error = await Assert.ThrowsAnyAsync<HttpRequestException>(() => web.Snapshot(Account, List, default, Shared));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, error.StatusCode);
+        Assert.Equal(3, handler.PageRequests);
+        Assert.DoesNotContain(Shared, error.Message);
+    }
+
+    [Fact]
+    public async Task SharedListDoesNotRetryBeforeProviderCooldown()
+    {
+        using var handler = new WebHandler { UnavailablePages = 1, PageCooldown = TimeSpan.FromMinutes(1) };
+        using var http = new HttpClient(handler);
+        var web = new OhmywishesWeb(http);
+        var error = await Assert.ThrowsAnyAsync<HttpRequestException>(() => web.Snapshot(Account, List, default, Shared));
+        Assert.Equal(HttpStatusCode.TooManyRequests, error.StatusCode);
+        Assert.Equal(1, handler.PageRequests);
     }
 
     [Fact]
@@ -96,6 +131,9 @@ public class OhmywishesWebTests
         public bool ProfilePrivate { get; set; }
         public bool ListRequiresSignIn { get; set; }
         public bool GatewayDenies { get; set; }
+        public int UnavailablePages { get; set; }
+        public TimeSpan PageCooldown { get; set; }
+        public int PageRequests { get; private set; }
         public string? PhotoUrl { get; set; } = "https://cdn.ohmywish.es/book.webp";
         public int Requests { get; private set; }
         public int GlobalWishRequests { get; private set; }
@@ -110,11 +148,22 @@ public class OhmywishesWebTests
             if (GatewayDenies)
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
                 {
-                    Content = new StringContent("<html>Forbidden</html>", System.Text.Encoding.UTF8, "text/html")
+                    Content = new StringContent("<html>Forbidden</html>", System.Text.Encoding.UTF8, "text/html"),
+                    Headers = { RetryAfter = new(TimeSpan.Zero) }
                 });
             Assert.StartsWith("Darim/1.0", request.Headers.UserAgent.ToString());
             var root = $"/api/v3/users/{Account}/wish-lists/{List}";
             var sharedRoot = $"/api/v3/users/{Account}/wish-lists/{Shared}";
+            if (request.RequestUri.AbsolutePath == sharedRoot + "/wishes-v2")
+            {
+                PageRequests++;
+                if (PageRequests <= UnavailablePages)
+                    return Task.FromResult(new HttpResponseMessage(PageCooldown > TimeSpan.Zero
+                        ? HttpStatusCode.TooManyRequests : HttpStatusCode.ServiceUnavailable)
+                    {
+                        Headers = { RetryAfter = new(PageCooldown) }
+                    });
+            }
             if (ListRequiresSignIn && (request.RequestUri.AbsolutePath == root || request.RequestUri.AbsolutePath == sharedRoot))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
             if (request.RequestUri.AbsolutePath == $"/api/v3/wishes/{Wish}") GlobalWishRequests++;

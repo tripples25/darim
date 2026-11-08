@@ -118,6 +118,7 @@ app.MapGet(OhmywishesOptions.CallbackPath,async(HttpContext ctx,OhmywishesOAuth 
   await sync.Connect(id,attempt,tokens,ctx.RequestAborted);
   return Results.Redirect("/?ohmywishes=connected");
  }catch(Exception ex)when(OhmywishesSync.IsProviderFailure(ex,ctx.RequestAborted)||ex is RuleException){
+  sync.LogFailure(id,"mcp","oauth-callback",ex);
   return Results.Redirect("/?ohmywishes=failed");
  }
 }).RequireRateLimiting("auth");

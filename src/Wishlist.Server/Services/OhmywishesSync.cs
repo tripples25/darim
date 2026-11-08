@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
@@ -38,8 +40,15 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         OhmywishesWeb.PublicListSource? source;
         try { source = await web.Resolve(link, ct); }
         catch (Exception ex) when (IsProviderFailure(ex, ct))
-        { throw new RuleException("Не удалось прочитать список Ohmywishes. Попробуйте позже.", 502); }
-        if (source == null) throw new RuleException("Этот список недоступен без входа в Ohmywishes.", 400);
+        {
+            LogFailure(userId, "web", "connect", ex);
+            throw new RuleException("Не удалось прочитать список Ohmywishes. Попробуйте позже.", 502);
+        }
+        if (source == null)
+        {
+            logger.LogInformation("Ohmywishes web connection rejected for user {UserId}: source unavailable.", userId);
+            throw new RuleException("Этот список недоступен без входа в Ohmywishes.", 400);
+        }
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
@@ -66,6 +75,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         connection.NextSync = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        logger.LogInformation("Ohmywishes web list connected for user {UserId}; first refresh scheduled.", userId);
     }
 
     public async Task<Guid> BeginAuthorization(Guid userId, CancellationToken ct)
@@ -146,6 +156,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         await HideGifts(userId, ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        logger.LogInformation("Ohmywishes disconnected for user {UserId}.", userId);
     }
 
     private async Task<(Guid Revision, OhmywishesListDto[] Lists)> ReadLists(Guid userId, CancellationToken ct)
@@ -163,6 +174,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         }
         catch (Exception ex) when (IsProviderFailure(ex, ct))
         {
+            LogFailure(userId, "mcp", "read-lists", ex);
             var reconnect = ex is OhmywishesAccessException;
             if (reconnect && job != null) await RecordFailure(userId, revision, job.ProtectedTokens, true, ct);
             throw new RuleException(reconnect ? "Переподключите Ohmywishes." : "Не удалось получить списки Ohmywishes.", reconnect ? 409 : 502);
@@ -177,10 +189,13 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         var due = await db.OhmywishesConnections.AsNoTracking()
             .Where(x => x.WebApi ? webEnabled : mcpEnabled)
             .Where(x => x.NextSync <= DateTimeOffset.UtcNow).OrderBy(x => x.NextSync).Take(20)
-            .Select(x => new { x.UserId, x.Revision }).ToListAsync(ct);
+            .Select(x => new { x.UserId, x.Revision, x.WebApi }).ToListAsync(ct);
         foreach (var entry in due)
         {
             SyncJob? job = null;
+            var transport = entry.WebApi ? "web" : "mcp";
+            var operation = "claim";
+            var started = Stopwatch.GetTimestamp();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromMinutes(2));
             try
@@ -188,19 +203,29 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 job = await Claim(entry.UserId, entry.Revision, scheduled: true, deadline.Token);
                 if (job?.ListId != null)
                 {
+                    operation = "read-snapshot";
                     var snapshot = job.WebApi
                         ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token, job.Access)
                         : await mcp.Snapshot(job.Access!, job.ListId, deadline.Token);
+                    operation = "apply-snapshot";
                     if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, deadline.Token))
+                    {
                         metrics?.RecordSync(DarimMetrics.SyncOutcome.Applied);
+                        logger.LogInformation("Ohmywishes {Transport} refresh applied for user {UserId}: {WishCount} wishes, {PhotoCount} with photos, in {ElapsedMs:F0} ms.",
+                            transport, entry.UserId, snapshot.Count, snapshot.Values.Count(x => x.PhotoUrl != null),
+                            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                    }
+                    else
+                        logger.LogDebug("Ohmywishes {Transport} refresh discarded for user {UserId}: connection changed.", transport, entry.UserId);
                 }
             }
             catch (Exception ex) when (IsProviderFailure(ex, ct))
             {
                 var reconnect = ex is OhmywishesAccessException or CryptographicException;
                 metrics?.RecordSync(reconnect ? DarimMetrics.SyncOutcome.ReconnectRequired : DarimMetrics.SyncOutcome.ProviderError);
-                logger.LogWarning("Ohmywishes refresh failed for user {UserId} ({Failure}).", entry.UserId, ex.GetType().Name);
-                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens, reconnect, ct);
+                LogFailure(entry.UserId, transport, operation, ex, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                await RecordFailure(entry.UserId, entry.Revision, job?.ProtectedTokens, reconnect, ct,
+                    (ex as OhmywishesWebFailure)?.RetryAfter);
             }
             finally
             {
@@ -246,6 +271,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         }
         catch (Exception ex) when (ex is OhmywishesAccessException or CryptographicException)
         {
+            LogFailure(userId, "mcp", "refresh-credentials", ex);
             await Invalidate(connection, ct);
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -302,7 +328,8 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return true;
     }
 
-    private async Task RecordFailure(Guid userId, Guid revision, string? usedTokens, bool reconnect, CancellationToken ct)
+    private async Task RecordFailure(Guid userId, Guid revision, string? usedTokens, bool reconnect, CancellationToken ct,
+        TimeSpan? retryAfter = null)
     {
         // A failed refresh or snapshot can leave tracked data from a rolled-back transaction.
         db.ChangeTracker.Clear();
@@ -313,7 +340,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         connection.Stale = true;
         if (reconnect) await Invalidate(connection, ct);
         else if (connection.ListId != null)
-            connection.NextSync = DateTimeOffset.UtcNow.Add(options.Interval);
+            connection.NextSync = DateTimeOffset.UtcNow.Add(retryAfter > options.Interval ? retryAfter.Value : options.Interval);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
     }
@@ -379,6 +406,27 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     internal static bool IsProviderFailure(Exception ex, CancellationToken ct) =>
         ex is HttpRequestException or InvalidDataException or JsonException or OhmywishesAccessException or CryptographicException
         || ex is OperationCanceledException && !ct.IsCancellationRequested;
+
+    internal void LogFailure(Guid userId, string transport, string operation, Exception ex, double? elapsedMs = null)
+    {
+        var webFailure = ex as OhmywishesWebFailure;
+        var httpFailure = ex as HttpRequestException;
+        var reason = webFailure?.Reason ?? (ex switch
+        {
+            HttpRequestException { StatusCode: not null } => "http-status",
+            HttpRequestException http => http.HttpRequestError.ToString(),
+            OperationCanceledException => "deadline-exceeded",
+            OhmywishesAccessException => "access-denied",
+            CryptographicException => "credentials-unreadable",
+            JsonException => "invalid-json",
+            InvalidDataException => "unexpected-payload",
+            _ => ex.GetType().Name
+        });
+        // Provider exception messages and URLs may contain share links or authentication data.
+        logger.LogWarning("Ohmywishes {Transport} {Operation} failed for user {UserId}: {Reason} (request stage {RequestStage}, HTTP {StatusCode}, elapsed {ElapsedMs:F0} ms, Retry-After {RetryAfterSeconds:F0} s).",
+            transport, operation, userId, reason, webFailure?.Stage, (int?)httpFailure?.StatusCode, elapsedMs,
+            webFailure?.RetryAfter?.TotalSeconds);
+    }
 
     private sealed record SyncJob(string? Access, string AccountId, string? ListId, string? ProtectedTokens, bool WebApi);
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -6,7 +7,7 @@ using Wishlist.Contracts;
 
 namespace Wishlist.Server.Services;
 
-public sealed partial class OhmywishesWeb(HttpClient http)
+public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb>? logger = null)
 {
     private const string Origin = "https://ohmywishes.com";
     private const int PageSize = 20;
@@ -39,7 +40,7 @@ public sealed partial class OhmywishesWeb(HttpClient http)
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (var offset = 0; offset < 2000; offset += PageSize)
         {
-            var page = await Get($"{wishesPath}?limit={PageSize}&offset={offset}", ct);
+            var page = await Get("wish-page", $"{wishesPath}?limit={PageSize}&offset={offset}", ct);
             if (page == null) return [];
             var items = Field(page.Value, "items");
             if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > PageSize)
@@ -50,7 +51,7 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
             foreach (var id in ids)
             {
-                var response = await Get(shared ? $"{wishesPath}/{id}" : $"wishes/{id}", ct);
+                var response = await Get("wish-detail", shared ? $"{wishesPath}/{id}" : $"wishes/{id}", ct);
                 if (response == null) continue;
                 var wish = Item(response.Value);
                 if (Id(wish) != id || Id(Field(wish, "creator")) != account)
@@ -87,7 +88,7 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
     private async Task<string?> Account(string user, bool shared, CancellationToken ct)
     {
-        var response = await Get($"users/{Uri.EscapeDataString(user)}", ct);
+        var response = await Get("profile", $"users/{Uri.EscapeDataString(user)}", ct);
         if (response == null) return null;
         var profile = Item(response.Value);
         return !shared && Flag(profile, "isPrivate") ? null : Id(profile);
@@ -97,7 +98,7 @@ public sealed partial class OhmywishesWeb(HttpClient http)
     {
         if (!PublicId().IsMatch(account) || !(shared ? ShareId().IsMatch(reference) : PublicId().IsMatch(reference)))
             throw new InvalidDataException("Invalid Ohmywishes web source IDs.");
-        var response = await Get($"users/{account}/wish-lists/{reference}", ct);
+        var response = await Get("list", $"users/{account}/wish-lists/{reference}", ct);
         if (response == null) return null;
         var item = Item(response.Value);
         var id = Id(item);
@@ -111,21 +112,71 @@ public sealed partial class OhmywishesWeb(HttpClient http)
         return new(account, id, title, shared ? reference : null);
     }
 
-    private async Task<JsonElement?> Get(string path, CancellationToken ct)
+    private async Task<JsonElement?> Get(string stage, string path, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{Origin}/api/v3/{path}");
-        request.Headers.UserAgent.ParseAdd("Darim/1.0 (+https://wishes.hype-ny.ru)");
-        using var response = await http.SendAsync(request, ct);
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+        const int maxAttempts = 3;
+        var started = Stopwatch.GetTimestamp();
+        for (var attempt = 1; ; attempt++)
         {
-            // An HTML gateway denial says nothing about the list's sharing permissions.
-            if (response.StatusCode == HttpStatusCode.Forbidden &&
-                string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase))
-                response.EnsureSuccessStatusCode();
-            return null;
+            try
+            {
+                var result = await GetOnce(stage, path, ct);
+                if (attempt > 1)
+                    logger?.LogInformation("Ohmywishes web {Stage} responded after {Attempt} attempts in {ElapsedMs:F0} ms.",
+                        stage, attempt, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                return result;
+            }
+            catch (OhmywishesWebFailure ex) when (ex.Transient && attempt < maxAttempts && !ct.IsCancellationRequested)
+            {
+                var delay = ex.RetryAfter ?? TimeSpan.FromSeconds(attempt);
+                // Leave longer cooldowns to the scheduled refresh instead of blocking the worker.
+                if (delay > TimeSpan.FromSeconds(3)) throw;
+                logger?.LogWarning("Ohmywishes web {Stage} attempt {Attempt}/{MaxAttempts} failed ({Reason}, HTTP {StatusCode}). Retrying in {DelayMs:F0} ms.",
+                    stage, attempt, maxAttempts, ex.Reason, (int?)ex.StatusCode, delay.TotalMilliseconds);
+                await Task.Delay(delay, ct);
+            }
         }
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+    }
+
+    private async Task<JsonElement?> GetOnce(string stage, string path, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{Origin}/api/v3/{path}");
+            request.Headers.UserAgent.ParseAdd("Darim/1.0 (+https://wishes.hype-ny.ru)");
+            using var response = await http.SendAsync(request, ct);
+            var status = response.StatusCode;
+            var gatewayDenial = status == HttpStatusCode.Forbidden &&
+                string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase);
+            if (!gatewayDenial && status is (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound))
+            {
+                logger?.Log(stage == "wish-detail" ? LogLevel.Debug : LogLevel.Information,
+                    "Ohmywishes web {Stage} is unavailable (HTTP {StatusCode}).", stage, (int)status);
+                return null;
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                var retryAfter = response.Headers.RetryAfter;
+                var delay = retryAfter?.Delta ?? retryAfter?.Date - DateTimeOffset.UtcNow;
+                if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+                if (delay > TimeSpan.FromDays(1)) delay = TimeSpan.FromDays(1);
+                throw new OhmywishesWebFailure(stage, gatewayDenial ? "gateway-denial" : "http-status", status,
+                    gatewayDenial || status is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests || (int)status >= 500, delay);
+            }
+            return await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        }
+        catch (HttpRequestException ex) when (ex is not OhmywishesWebFailure && ex.StatusCode == null)
+        {
+            throw new OhmywishesWebFailure(stage, ex.HttpRequestError.ToString(), transient: true);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new OhmywishesWebFailure(stage, "request-timeout", transient: true);
+        }
+        catch (JsonException)
+        {
+            throw new OhmywishesWebFailure(stage, "invalid-json");
+        }
     }
 
     private static JsonElement Item(JsonElement json) => Field(json, "item");
@@ -157,4 +208,13 @@ public sealed partial class OhmywishesWeb(HttpClient http)
 
     public sealed record PublicListLink(string User, string ListId);
     public sealed record PublicListSource(string AccountId, string ListId, string Title, string? ShareToken);
+}
+
+internal sealed class OhmywishesWebFailure(string stage, string reason, HttpStatusCode? status = null,
+    bool transient = false, TimeSpan? retryAfter = null) : HttpRequestException("Ohmywishes web request failed.", null, status)
+{
+    public string Stage { get; } = stage;
+    public string Reason { get; } = reason;
+    public bool Transient { get; } = transient;
+    public TimeSpan? RetryAfter { get; } = retryAfter;
 }
