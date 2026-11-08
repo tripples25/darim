@@ -524,6 +524,42 @@
   background: var(--soft);
 }
 .gift-photo[hidden] { display: none; }
+.company-picker {
+  min-width: 0;
+  max-width: 230px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.company-manage, .company-invite, .top-actions .notice-button { min-height: 44px; }
+.cover-actions, .public-wishlist .public-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.share-links { display: grid; gap: 12px; margin-top: 20px; }
+.share-link { padding: 12px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.visibility-fields { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; padding: 8px 12px; }
+.visibility-fields legend { color: var(--muted); padding-inline: 5px; }
+.visibility-fields label { flex-direction: row; align-items: center; margin: 5px 0; }
+.visibility-fields input { width: auto; }
+.visibility-company-options { padding-inline-start: 19px; }
+.company-forms { display: grid; gap: 24px; }
+.public-wishlist .public-bar { justify-content: space-between; }
+.public-cover { margin: 24px 0; }
+.public-cover p { color: var(--muted); margin-top: 8px; }
+.guest-consent { flex-direction: row; align-items: start; gap: 10px; }
+.guest-consent input { width: auto; margin-top: 3px; }
+@media (max-width: 760px) {
+  .wishlist-shell .top-actions { min-width: 0; gap: 4px; }
+  .company-picker { max-width: min(32vw, 155px); font-size: 12px; }
+  .company-manage, .company-invite { padding: 0 6px; min-width: 44px; }
+  .company-manage > span, .company-invite > span { display: none; }
+}
 .dialog-content > .gift-photo { width: min(100%, 260px); margin: 8px auto 12px; }
 .gift-print {
   --print-angle: -2deg;

@@ -13,6 +13,50 @@ test('organizer can create an invitation with a usage limit',async({page})=>{
 async function create(page:Page,title:string,occasion='Новый год'){
  await page.getByRole('button',{name:'Добавить желание'}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Что хочется?').fill(title);await dialog.getByText('Дополнительные параметры',{exact:true}).click();await dialog.getByLabel('Примерная цена').fill('12000');await dialog.getByLabel('Праздник',{exact:true}).selectOption(occasion);await dialog.getByRole('button',{name:'Сохранить желание'}).click();await expect(dialog).not.toBeVisible();return page.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})});
 }
+test('switches companies and shares the selected company without reservation details',async({page,browser})=>{
+ await page.setViewportSize({width:390,height:844});
+ await login(page,'Юлия');
+ const title='Подарок для ссылки '+Date.now();
+ const card=await create(page,title);
+ await expect(card).toBeVisible();
+ await page.getByRole('button',{name:'Мои компании'}).click();
+ let dialog=page.getByRole('dialog');
+ const company='Вторая компания '+Date.now();
+ await dialog.getByLabel('Название',{exact:true}).fill(company);
+ await dialog.getByRole('button',{name:'Создать',exact:true}).click();
+ await expect(page.getByRole('dialog',{name:'Пригласить друзей'})).toBeVisible();
+ await page.getByRole('button',{name:'Закрыть',exact:true}).click();
+ const switcher=page.getByLabel('Текущая компания');
+ await expect(switcher.locator('option:checked')).toHaveText(company);
+ await expect(card).toHaveCount(0);
+ await switcher.selectOption({label:'Близкие люди'});
+ await expect(card).toBeVisible();
+ await page.reload();
+ await expect(card).toBeVisible();
+ await page.getByRole('button',{name:'Мои желания',exact:true}).click();
+ await page.getByRole('button',{name:'Поделиться списком'}).click();
+ dialog=page.getByRole('dialog',{name:'Ссылки на желания'});
+ await dialog.getByLabel('Какие желания открыть').selectOption({label:'Близкие люди'});
+ await dialog.getByRole('button',{name:'Создать ссылку'}).click();
+ const link=dialog.getByLabel('Ссылка',{exact:true});
+ await expect(link).toHaveValue(/\/share#[A-Za-z0-9_-]{43}$/);
+ const url=await link.inputValue();
+
+ const guest=await browser.newPage({viewport:{width:390,height:844}});
+ try{
+  await guest.goto(url);
+  const publicCard=guest.locator('article').filter({has:guest.getByRole('heading',{name:title,exact:true})});
+  await expect(publicCard).toBeVisible();
+  await expect(publicCard).not.toContainText(/занят|забронирован/);
+  expect(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await guest.request.post('/auth/demo/1');
+  await guest.reload();
+  await publicCard.getByRole('button',{name:'Хочу подарить'}).click();
+  await guest.getByRole('button',{name:'Отправить заявку'}).click();
+  await expect(guest.getByRole('status')).toContainText('Запрос принят. Подарок мог быть уже занят.');
+  await expect(publicCard.getByRole('button',{name:'Отменить мою заявку'})).toBeVisible();
+ }finally{await guest.close();}
+});
 test('gift editor is centered and keeps optional values when collapsed',async({page})=>{
  const viewport={width:390,height:740};
  await page.setViewportSize(viewport);
@@ -37,13 +81,13 @@ test('gift editor is centered and keeps optional values when collapsed',async({p
  await extras.press('Enter');
  await dialog.getByRole('button',{name:'Сохранить желание'}).click();
  await expect(dialog).toBeHidden();
- const gifts=await (await page.request.get('/api/gifts')).json();
+ const gifts=await (await page.request.get('/api/gifts/mine')).json();
  expect(gifts.find((gift:any)=>gift.details.title===title)?.details.price).toBe(340);
 });
 test('create, filter, reserve and hide reservation from recipient',async({page,browser})=>{
- await login(page,'Юлия');const title='Книга для проверки '+Date.now();const ownerCard=await create(page,title);await expect(ownerCard).toContainText('Брони скрыты от вас');await page.getByLabel('Праздник',{exact:true}).selectOption('Новый год');await expect(ownerCard).toBeVisible();
- const ctx=await browser.newContext();const donor=await ctx.newPage();await login(donor,'Макс');const card=donor.locator('article').filter({has:donor.getByRole('heading',{name:title,exact:true})});await card.getByRole('button',{name:'Подарю сам'}).click();await donor.getByRole('dialog').getByRole('button',{name:'Подтвердить'}).click();await expect(card).toContainText('Вы дарите этот подарок');await page.reload();await expect(ownerCard).toContainText('Брони скрыты от вас');await expect(ownerCard).not.toContainText('Кто-то уже дарит');
- const response=await page.request.get('/api/gifts');const gifts=await response.json();const gift=gifts.find((g:any)=>g.details.title===title);expect(gift.participation).toBeNull();expect(gift.original).toBeNull();await ctx.close();
+ await login(page,'Юлия');const title='Книга для проверки '+Date.now();const ownerCard=await create(page,title);await expect(ownerCard).toContainText('Близкие люди');await page.getByLabel('Праздник',{exact:true}).selectOption('Новый год');await expect(ownerCard).toBeVisible();
+ const ctx=await browser.newContext();const donor=await ctx.newPage();await login(donor,'Макс');const card=donor.locator('article').filter({has:donor.getByRole('heading',{name:title,exact:true})});await card.getByRole('button',{name:'Подарю сам'}).click();await donor.getByRole('dialog').getByRole('button',{name:'Подтвердить'}).click();await expect(card).toContainText('Вы дарите этот подарок');await page.reload();await expect(ownerCard).toContainText('Близкие люди');await expect(ownerCard).not.toContainText('Кто-то уже дарит');
+ const response=await page.request.get('/api/gifts/mine');const gifts=await response.json();const gift=gifts.find((g:any)=>g.details.title===title);expect(gift.participation).toBeNull();expect(gift.original).toBeNull();await ctx.close();
 });
 test('split, join, coordinate and buy together',async({page,browser})=>{
  await login(page,'Юлия');const title='Совместный подарок '+Date.now();await create(page,title);

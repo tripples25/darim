@@ -6,7 +6,7 @@ using Wishlist.Contracts;
 namespace Wishlist.Tests;
 public class ComponentTests:BunitContext {
  public ComponentTests(){Services.AddMudServices();JSInterop.Mode=JSRuntimeMode.Loose;}
- [Fact] public void OwnGiftNeverRendersReservationButtons(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга",Occasion:"Новый год"),false,null);var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g).Add(x=>x.IsOwner,true));Assert.Contains("Брони скрыты от вас",card.Markup);Assert.DoesNotContain("Подарю сам",card.Markup);Assert.DoesNotContain("Распилить",card.Markup);Assert.Contains("Новый год",card.Markup);}
+ [Fact] public void OwnGiftNeverRendersReservationButtons(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга",Occasion:"Новый год"),false,null);var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g).Add(x=>x.IsOwner,true).Add(x=>x.VisibilityText,"Только я"));Assert.Contains("Только я",card.Markup);Assert.DoesNotContain("Подарю сам",card.Markup);Assert.DoesNotContain("Распилить",card.Markup);Assert.Contains("Новый год",card.Markup);}
  [Fact] public void FreeGiftOffersBothModes(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("free",false,0,0,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.Contains("Подарю сам",card.Markup);Assert.Contains("Распилить",card.Markup);}
  [Fact] public void FullSplitDoesNotOfferJoin(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("split",false,2,2,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.DoesNotContain("Занять одну долю",card.Markup);Assert.Contains("Занято 2 из 2",card.Markup);}
  [Fact]
@@ -14,8 +14,8 @@ public class ComponentTests:BunitContext {
  {
   var gift=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,null,FromOhmywishes:true);
   var owner=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift).Add(x=>x.IsOwner,true));
-  Assert.Contains("Редактируется в Ohmywishes",owner.Markup);
-  Assert.Empty(owner.FindAll(".card-actions button"));
+  Assert.Contains("Остальное в Ohmywishes",owner.Markup);
+  Assert.Equal("Видимость",Assert.Single(owner.FindAll(".card-actions button")).TextContent.Trim());
   Assert.Single(owner.FindAll("button.gift-title"));
   var donor=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift with { Participation=new("free",false,0,0,false,false,null) }));
   Assert.Contains("Ohmywishes",donor.Markup);
@@ -41,6 +41,7 @@ public class MembershipRefreshTests:BunitContext {
     "/api/auth-info"=>new AuthInfoDto(false,false),
     "/api/me"=>new MeDto(me,new(company,"Друзья",true,members)),
     "/api/gifts"=>new[]{new GiftDto(gift,new(other,"Друг"),new("Подарок"),false,new("free",false,0,0,false,false,null))},
+    "/api/gifts/mine" or "/api/gifts/giving"=>Array.Empty<GiftDto>(),
     "/api/notices"=>Array.Empty<NoticeDto>(),_=>throw new InvalidOperationException(request.RequestUri.ToString())};
    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK){Content=System.Net.Http.Json.JsonContent.Create(data)});
   }

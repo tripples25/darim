@@ -1,0 +1,134 @@
+@page "/share"
+@inject Api Api
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<PageTitle>Список желаний — Дарим</PageTitle>
+
+<main class="page-content public-wishlist">
+ <header class="public-bar">
+  <a class="brand" href="/"><span class="brand-icon"><MudIcon Icon="@Icons.Material.Outlined.Redeem" /></span>дарим<span class="brand-dot">.</span></a>
+  @if(signedIn){<a href="/?tab=giving" class="soft-button">Я дарю</a>}
+ </header>
+ @if(loading){<div class="empty-state" role="status">Открываем список желаний…</div>}
+ else if(wishlist is null){
+  <section class="empty-state wishlist-empty">
+   <h1>Список недоступен</h1>
+   <p>Проверьте ссылку или попросите владельца прислать новую.</p>
+   @if(loadFailed){<button type="button" class="soft-button" @onclick="Load">Попробовать ещё раз</button>}
+  </section>
+ }else{
+  <header class="public-cover"><h1>Желания · @wishlist.OwnerName</h1><p>Выберите то, что порадует получателя.</p></header>
+  @if(message!=null){<p class="success-box" role="status">@message</p>}
+  @if(error!=null&&selected==null){<p class="error-box" role="alert">@error</p>}
+  @if(wishlist.Gifts.Length==0){<div class="empty-state wishlist-empty"><h2>Здесь пока нет желаний</h2><p>Подарки появятся, когда владелец добавит их в список.</p></div>}
+  <div class="gift-grid">
+   @foreach(var gift in wishlist.Gifts){
+    <article class="gift-card gift-card-tall" @key="gift.Id" data-gift-id="@gift.Id">
+     <div class="gift-content">
+      <div class="gift-eyebrow">@gift.Details.Occasion @if(gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>}</div>
+      <h2 class="gift-title">@gift.Details.Title</h2>
+      @if(gift.PhotoUrl!=null||gift.PhotoVersion!=null){<figure class="gift-print"><GiftPhoto @key="(gift.PhotoUrl,gift.PhotoVersion)" PublicGift="gift" ShareToken="token" /></figure>}
+      @if(gift.Details.Comment is {} note){<p class="gift-description">@note</p>}
+      <div class="price-row">
+       <strong>@(gift.Details.Price is {} price?price.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" ₽":"На ваш выбор")</strong>
+       @if(gift.Details.Url is {} shop){<a href="@shop" target="_blank" rel="noopener noreferrer">В магазин <MudIcon Icon="@Icons.Material.Outlined.NorthEast" Size="Size.Small" /></a>}
+      </div>
+      <div class="card-actions">
+       @if(requests.FirstOrDefault(request=>request.GiftId==gift.Id) is {} request){
+        @if(request.Confirmed){<a class="soft-button" href="/?tab=giving">Открыть в «Я дарю»</a>}
+        else{<button type="button" class="soft-button" disabled="@busy" @onclick="()=>CancelRequest(request.Id)">Отменить мою заявку</button>}
+       }else{
+        <button type="button" class="primary-button" disabled="@busy" @onclick="()=>OpenRequest(gift)">Хочу подарить</button>
+       }
+      </div>
+     </div>
+    </article>
+   }
+  </div>
+ }
+</main>
+
+<dialog id="public-request-dialog" @onclose="RequestClosed" aria-labelledby="dialog-title">
+ <div class="dialog-heading"><h2 id="dialog-title" tabindex="-1">Хочу подарить</h2><button type="button" class="icon-button" aria-label="Закрыть" @onclick="CloseRequest"><MudIcon Icon="@Icons.Material.Outlined.Close" /></button></div>
+ <div class="dialog-content">
+  @if(selected!=null){
+   <p>«@selected.Details.Title»</p>
+   @if(error!=null){<p class="error-box" role="alert">@error</p>}
+   @if(!signedIn){
+    <p>Войдите через Telegram, чтобы отправить заявку и получать уведомления в «Дарим».</p>
+    @if(info?.TelegramConfigured==true){<button type="button" class="primary-button full" @onclick="SignIn">Войти через Telegram</button>}
+    else{<p class="dialog-hint">Вход через Telegram сейчас недоступен.</p>}
+   }else{
+    <form @onsubmit="SendRequest" @onsubmit:preventDefault>
+     <p>Доступность подарка скрыта. Заявку можно отменить, пока она не подтверждена.</p>
+     <label class="guest-consent"><input type="checkbox" @bind="shareUsername" /> Разрешаю показать мой Telegram-ник тому, кто уже дарит этот подарок, если он занят.</label>
+     <button class="primary-button full" disabled="@busy">Отправить заявку</button>
+    </form>
+   }
+  }
+ </div>
+</dialog>
+
+@code {
+ string token="";
+ bool loading=true,loadFailed,signedIn,busy,shareUsername;
+ string? error,message;
+ AuthInfoDto? info;
+ PublicWishlistDto? wishlist;
+ PublicWishDto? selected;
+ WishlistRequestDto[] requests=[];
+
+ protected override async Task OnAfterRenderAsync(bool firstRender){if(firstRender)await Load();}
+
+ async Task Load(){
+  loading=true;loadFailed=false;
+  try{
+   token=await JS.InvokeAsync<string>("wishlist.shareToken");
+   var launch=await JS.InvokeAsync<Home.LaunchInfo>("wishlist.init");
+   if(!Api.IsMini&&!string.IsNullOrEmpty(launch.InitData)){
+    var session=await Api.Post<MiniSessionDto>("auth/mini",new MiniLoginInput(launch.InitData));
+    Api.SetMini(session.Token);
+   }
+   try{await Api.Get<MeDto>("api/me");signedIn=true;}
+   catch(ApiException ex)when(ex.Status==System.Net.HttpStatusCode.Unauthorized){signedIn=false;}
+   if(signedIn)requests=await Api.Get<WishlistRequestDto[]>("api/wishlist-requests");
+   else info=await Api.Get<AuthInfoDto>("api/auth-info");
+   if(token.Length is >0 and <=128&&token.All(c=>char.IsAsciiLetterOrDigit(c)||c is '-' or '_'))wishlist=await Api.Get<PublicWishlistDto>("api/public/wishlist",token);
+  }catch(ApiException ex)when(ex.Status is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone){wishlist=null;}
+  catch(Exception ex)when(ex is HttpRequestException or ApiException or JSException){loadFailed=true;}
+  finally{loading=false;StateHasChanged();}
+  if(signedIn&&wishlist!=null){
+   var id=await JS.InvokeAsync<string?>("wishlist.takeShareIntent");
+   if(Guid.TryParse(id,out var giftId)&&wishlist.Gifts.FirstOrDefault(gift=>gift.Id==giftId) is {} gift&&!requests.Any(request=>request.GiftId==giftId))await OpenRequest(gift);
+  }
+ }
+
+ async Task OpenRequest(PublicWishDto gift){
+  selected=gift;shareUsername=false;error=null;message=null;
+  StateHasChanged();
+  await JS.InvokeVoidAsync("wishlist.showDialog","public-request-dialog");
+ }
+ async Task CloseRequest()=>await JS.InvokeVoidAsync("wishlist.closeDialog","public-request-dialog");
+ void RequestClosed(){selected=null;error=null;}
+ async Task SignIn(){
+  if(selected==null)return;
+  await JS.InvokeVoidAsync("wishlist.saveShareIntent",selected.Id);
+  Navigation.NavigateTo("/auth/login?returnTo=share",forceLoad:true);
+ }
+ async Task SendRequest(){
+  if(selected is not {} gift)return;
+  await UpdateRequests(async()=>{
+   await Api.Change($"api/wishlist-links/gifts/{gift.Id}/request",new WishlistRequestInput(shareUsername,token));
+   await CloseRequest();
+  },"Запрос принят. Подарок мог быть уже занят.");
+ }
+ Task CancelRequest(Guid id)=>UpdateRequests(()=>Api.Delete($"api/wishlist-requests/{id}"),"Заявка отменена.");
+ async Task UpdateRequests(Func<Task> action,string success){
+  if(busy)return;
+  busy=true;error=null;message=null;
+  try{await action();message=success;requests=await Api.Get<WishlistRequestDto[]>("api/wishlist-requests");}
+  catch(Exception ex)when(ex is HttpRequestException or ApiException or JSException){error=ex.Message;}
+  finally{busy=false;}
+ }
+}

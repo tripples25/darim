@@ -2,27 +2,31 @@
 @inject Api Api
 @inject IJSRuntime JS
 
-@if (Gift.PhotoUrl is { } url && !unavailable)
+@if (PhotoUrl is { } url && !unavailable)
 {
     <img class="gift-photo" src="@url" alt="@Description" loading="lazy" decoding="async"
          referrerpolicy="no-referrer" @onerror="()=>unavailable=true" />
 }
-else if (Gift.PhotoVersion != null)
+else if (PhotoVersion != null)
 {
     <img @ref="image" class="gift-photo" alt="@Description" decoding="async" hidden />
 }
 
 @code {
-    [Parameter, EditorRequired] public GiftDto Gift { get; set; } = default!;
-    private string Description => $"Фото: {Gift.Details.Title}";
+    [Parameter] public GiftDto? Gift { get; set; }
+    [Parameter] public PublicWishDto? PublicGift { get; set; }
+    [Parameter] public string? ShareToken { get; set; }
+    private string? PhotoUrl => Gift?.PhotoUrl ?? PublicGift?.PhotoUrl;
+    private Guid? PhotoVersion => Gift?.PhotoVersion ?? PublicGift?.PhotoVersion;
+    private string Description => $"Фото: {Gift?.Details.Title ?? PublicGift?.Details.Title}";
     private ElementReference image;
     private IJSObjectReference? loader;
     private bool unavailable, disposed;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || Gift.PhotoVersion is not { } version) return;
-        var reference = await Api.WatchGiftPhoto(JS, image, Gift.Id, version);
+        if (!firstRender || PhotoUrl != null || PhotoVersion is not { } version || (Gift?.Id ?? PublicGift?.Id) is not { } id) return;
+        var reference = await Api.WatchGiftPhoto(JS, image, id, version, ShareToken);
         if (disposed) await Release(reference);
         else loader = reference;
     }

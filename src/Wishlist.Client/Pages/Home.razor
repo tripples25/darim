@@ -1,4 +1,5 @@
 @namespace Wishlist.Client.Pages
+@page "/"
 @implements IAsyncDisposable
 @inject Api Api
 @inject IJSRuntime JS
@@ -25,47 +26,50 @@ else{
   <a class="brand" href="/"><span class="brand-icon"><MudIcon Icon="@Icons.Material.Outlined.Redeem" /></span>дарим<span class="brand-dot">.</span></a>
   <div class="company-name">
    <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" />
-   <div><small>Ваша компания</small><strong>@(me.Company?.Name ?? "Начнём знакомство")</strong></div>
+   <div><small>Текущая компания</small><strong>@(CurrentCompany?.Name ?? "Пока нет компаний")</strong></div>
   </div>
   <nav aria-label="Основная навигация">
    <button class="nav-item @(tab=="all"?"active":"")" aria-current="@(tab == "all" ? "page" : null)" @onclick='()=>SetTab("all")'><MudIcon Icon="@Icons.Material.Outlined.GridView" /> Все желания</button>
    <button class="nav-item @(tab=="mine"?"active":"")" aria-current="@(tab == "mine" ? "page" : null)" @onclick='()=>SetTab("mine")'><MudIcon Icon="@Icons.Material.Outlined.FavoriteBorder" /> Мои желания</button>
-   <button class="nav-item @(tab=="giving"?"active":"")" aria-current="@(tab == "giving" ? "page" : null)" @onclick='()=>SetTab("giving")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" /> Я дарю <span class="nav-count">@gifts.Count(g=>!g.Archived&&g.Participation?.IsMine==true)</span></button>
+   <button class="nav-item @(tab=="giving"?"active":"")" aria-current="@(tab == "giving" ? "page" : null)" @onclick='()=>SetTab("giving")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" /> Я дарю <span class="nav-count">@givingGifts.Count(g=>!g.Archived)</span></button>
   </nav>
   <div class="sidebar-bottom"><button class="user-button" aria-label="Мой профиль" @onclick="OpenProfile"><span class="avatar">@Initial(me.User.Name)</span><span><strong>@me.User.Name</strong><small>Мой профиль</small></span><MudIcon Icon="@Icons.Material.Outlined.Settings" Size="Size.Small" /></button><button class="logout-button" disabled="@busy" @onclick="Logout">Выйти</button></div>
  </aside>
  <main class="main-area">
   <header class="topbar">
-   <span class="breadcrumb">Наша компания <span>/</span> @TabTitle</span>
    <a class="mobile-wordmark" href="/">дарим<span>.</span></a>
    <div class="top-actions">
-   @if(me.Company!=null){<div class="avatar-stack" aria-label="Участники компании">@foreach(var person in me.Company.Members.Take(4)){<span class="avatar small" title="@person.Name">@Initial(person.Name)</span>}</div>}
-   @if(me.Company?.IsOrganizer==true){<button class="soft-button invite-button" aria-label="Пригласить" @onclick="OpenInvite"><MudIcon Icon="@Icons.Material.Outlined.PersonAddAlt" Size="Size.Small" /> Пригласить</button>}
+   @if(Companies.Length>0){
+    <select class="company-picker" aria-label="Текущая компания" value="@currentCompanyId" disabled="@busy" @onchange="SwitchCompany">
+     @foreach(var company in Companies){<option value="@company.Id" selected="@(currentCompanyId==company.Id)">@company.Name</option>}
+    </select>
+   }
+   <button class="soft-button company-manage" aria-label="Мои компании" @onclick="OpenCompanies"><MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" /><span>Компании</span></button>
+   @if(CurrentCompany?.IsOrganizer==true){<button class="soft-button invite-button company-invite" aria-label="Пригласить" @onclick="OpenInvite"><MudIcon Icon="@Icons.Material.Outlined.PersonAddAlt" Size="Size.Small" /><span>Пригласить</span></button>}
    <button class="icon-button notice-button" aria-label="Уведомления" @onclick="OpenNotices"><MudIcon Icon="@Icons.Material.Outlined.NotificationsNone" />@if(notices.Any(n=>!n.Read)){<span class="unread-dot"></span>}</button>
   </div></header>
   <div class="page-content">
    @if(!string.IsNullOrEmpty(error)){<div class="error-box" role="alert">@error <button @onclick="Refresh">Обновить</button></div>}
-   @if(me.Company==null){
-    <section class="onboarding"><span class="eyebrow">ПЕРВЫЙ ШАГ</span><h1>Подарки объединяют.</h1><p>Создайте компанию и пригласите друзей или присоединитесь по приглашению.</p><div class="onboarding-grid">
-     <form @onsubmit="CreateCompany" @onsubmit:preventDefault><h2>Своя компания</h2><label>Название<input @bind="companyName" required maxlength="100" placeholder="Например, Близкие люди" /></label><button class="primary-button" disabled="@busy">Создать компанию</button></form>
-     <form @onsubmit="JoinCompany" @onsubmit:preventDefault><h2>Есть приглашение?</h2><label>Код или ссылка<input @bind="joinToken" required placeholder="Вставьте приглашение" /></label><button class="soft-button" disabled="@busy">Присоединиться</button></form>
-    </div></section>
+   @if(tab=="all"&&CurrentCompany==null){
+    <section class="onboarding"><h1>Все желания</h1><p>Создайте компанию или присоединитесь по приглашению, чтобы увидеть желания друзей.</p><button class="primary-button" @onclick="OpenCompanies">Создать или присоединиться</button></section>
    }else{
     <header class="wishlist-cover">
      <div class="wishlist-cover-copy">
       <h1>@TabTitle</h1>
       <p>@TabDescription</p>
-      <button class="primary-button cover-add" disabled="@busy" @onclick="()=>OpenEditor(null)">
+      @if(tab!="giving"){<div class="cover-actions"><button class="primary-button cover-add" disabled="@busy" @onclick="()=>OpenEditor(null)">
        <MudIcon Icon="@Icons.Material.Outlined.Add" Size="Size.Small" /> Добавить желание
       </button>
+      @if(tab=="mine"){<button class="soft-button cover-share" disabled="@busy" @onclick="OpenShares"><MudIcon Icon="@Icons.Material.Outlined.Link" Size="Size.Small" /> Поделиться списком</button>}
+      </div>}
      </div>
     </header>
-    @if(tab=="all"){
+    @if(tab=="all"&&CurrentCompany is {} current){
      <div class="people-filter" role="group" aria-label="Фильтр по человеку">
       <button class="person-chip @(ownerFilter==""?"selected":"")" aria-pressed="@(ownerFilter == "" ? "true" : "false")" @onclick='()=>ownerFilter=""'>
        <span class="avatar all-avatar"><MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Small" /></span>Все
       </button>
-      @foreach(var person in me.Company.Members){
+      @foreach(var person in current.Members){
        var selected = ownerFilter == person.Id.ToString();
        <button class="person-chip @(selected ? "selected" : "")" aria-pressed="@(selected ? "true" : "false")" @onclick="()=>ownerFilter=person.Id.ToString()">
         <span class="avatar" aria-hidden="true">@Initial(person.Name)</span><span>@person.Name @(person.Id==me.User.Id?"(вы)":"")</span>
@@ -103,7 +107,7 @@ else{
        <span class="section-count" aria-label="Желаний в группе">@group.Count()</span>
        <div class="section-line"></div>
       </div>
-      <div class="gift-grid">@foreach(var gift in group){<GiftCard @key="gift.Id" Gift="gift" IsOwner="@(gift.Owner.Id==me.User.Id)" OnAction="action=>GiftAction(gift,action)" />}</div>
+      <div class="gift-grid">@foreach(var gift in group){var isOwner=gift.Owner.Id==me.User.Id;<GiftCard @key="gift.Id" Gift="gift" IsOwner="isOwner" VisibilityText="@(isOwner?VisibilityLabel(gift):null)" OnAction="action=>GiftAction(gift,action)" />}</div>
      </section>
     }
     @if(visibleGifts.Length == 0){
@@ -126,7 +130,7 @@ else{
       }else{
        <MudIcon Icon="@Icons.Material.Outlined.FavoriteBorder" />
        <h2>@(tab=="mine" ? "У вас пока нет желаний" : "В компании пока нет желаний")</h2>
-       <p>Добавьте то, что вас порадует, и друзья увидят это в списке.</p>
+       <p>@(tab=="mine"?"Добавьте то, что вас порадует, и выберите, кто сможет это увидеть.":"Добавьте то, что вас порадует, и друзья увидят это в списке.")</p>
        <button type="button" class="primary-button" disabled="@busy" @onclick="()=>OpenEditor(null)">Добавить первое желание</button>
       }
      </div>
@@ -166,6 +170,7 @@ else{
     @if(readingEditPhoto){<small role="status">Читаем фото…</small>}
     @if(editPhotoError is {} photoError){<small class="error-box" role="alert">@photoError</small>}
    </div>
+   @VisibilityFields
    <details class="editor-extras" open="@(selected != null)">
     <summary>Дополнительные параметры <MudIcon Icon="@Icons.Material.Outlined.ExpandMore" Size="Size.Small" /></summary>
     <div class="editor-fields">
@@ -180,11 +185,45 @@ else{
      <label>Подсказка для друзей<textarea @bind="editComment" maxlength="2000" rows="3" placeholder="Цвет, размер или почему это вас порадует"></textarea></label>
     </div>
    </details>
-   <button class="primary-button full" disabled="@(busy || readingEditPhoto)">@(busy?"Сохраняем…":"Сохранить желание")</button>
+   <button class="primary-button full" disabled="@(busy || readingEditPhoto || !VisibilityValid)">@(busy?"Сохраняем…":"Сохранить желание")</button>
   </form>
  }
+ else if(dialog=="visibility"&&selected!=null){
+  <p>«@selected.Details.Title»</p>
+  <form @onsubmit="SaveVisibility" @onsubmit:preventDefault>
+   @VisibilityFields
+   <button class="primary-button full" disabled="@(busy||!VisibilityValid)">Сохранить видимость</button>
+  </form>
+ }
+ else if(dialog=="companies"){
+  <div class="company-forms">
+   <form @onsubmit="CreateCompany" @onsubmit:preventDefault><h3>Создать компанию</h3><label>Название<input @bind="companyName" required maxlength="100" placeholder="Например, Близкие люди" /></label><button class="primary-button" disabled="@busy">Создать</button></form>
+   <form @onsubmit="JoinCompany" @onsubmit:preventDefault><h3>Присоединиться к компании</h3><label>Код или ссылка<input @bind="joinToken" required placeholder="Вставьте приглашение" /></label><button class="soft-button" disabled="@busy">Присоединиться</button></form>
+  </div>
+ }
+ else if(dialog=="shares"){
+  <p>По ссылке можно посмотреть желания без входа. Брони и участники компаний гостям скрыты.</p>
+  <form class="share-create" @onsubmit="CreateShare" @onsubmit:preventDefault>
+   <label>Какие желания открыть<select @bind="shareAudience"><option value="">Общие желания всех компаний</option>@foreach(var company in Companies){<option value="@company.Id">@company.Name</option>}</select></label>
+   <label>Название ссылки для вас<input @bind="shareLabel" maxlength="80" placeholder="Необязательно" /></label>
+   <button class="primary-button full" disabled="@busy">Создать ссылку</button>
+  </form>
+  <div class="share-links">
+   @foreach(var link in shareLinks.Where(link=>link.Revoked==null)){
+    <section class="share-link" @key="link.Id">
+     <h3>@(link.Label??ShareAudienceName(link.CompanyId))</h3>
+     <p class="dialog-hint">@ShareAudienceName(link.CompanyId) · @link.Created.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p>
+     @if(issuedLinks.TryGetValue(link.Id,out var url)){
+      <label>Ссылка<input readonly value="@url" /></label>
+      <button type="button" class="soft-button" @onclick="()=>Copy(url)">Скопировать</button>
+     }
+     <button type="button" class="text-danger" disabled="@busy" @onclick="()=>RevokeShare(link.Id)">Отключить ссылку</button>
+    </section>
+   }
+  </div>
+ }
  else if(dialog=="split"&&selected!=null){
-  <p>Разделим «@selected.Details.Title» на равные доли. Вы займёте первую, друзья смогут присоединиться.</p><form @onsubmit="StartSplit" @onsubmit:preventDefault><label>Количество участников<input type="number" min="2" max="@(me!.Company!.Members.Length-1)" @bind="splitSlots" required /></label>@if(selected.Details.Price is {} amount&&splitSlots>0){<div class="split-preview">≈ @((amount/splitSlots).ToString("N0")) ₽ <span>с человека</span></div>}<p class="dialog-hint">Число долей фиксируется. Каждый занимает только одну. Деньги переводите друг другу самостоятельно.</p><button class="primary-button full" disabled="@(busy||me!.Company!.Members.Length<3)">Распилить и занять долю</button></form>
+  <p>Разделим «@selected.Details.Title» на равные доли. Вы займёте первую, друзья смогут присоединиться.</p><form @onsubmit="StartSplit" @onsubmit:preventDefault><label>Количество участников<input type="number" min="2" max="@((CurrentCompany?.Members.Length??1)-1)" @bind="splitSlots" required /></label>@if(selected.Details.Price is {} amount&&splitSlots>0){<div class="split-preview">≈ @((amount/splitSlots).ToString("N0")) ₽ <span>с человека</span></div>}<p class="dialog-hint">Число долей фиксируется. Каждый занимает только одну. Деньги переводите друг другу самостоятельно.</p><button class="primary-button full" disabled="@(busy||CurrentCompany?.Members.Length is not >=3)">Распилить и занять долю</button></form>
  }
  else if(dialog=="details"&&selected is {} detail){
   <h3>@detail.Details.Title</h3><p class="dialog-hint">Получатель: @detail.Owner.Name · @detail.Details.Occasion</p>
@@ -228,13 +267,13 @@ else{
     else if(integration.ListId != null && integration.LastSuccess == null){<p role="status">Первое обновление скоро начнётся.</p>}
     else if(integration.ListId != null){<p class="dialog-hint">Новые желания появятся автоматически.</p>}
     @if(integration.Enabled && !integration.Connected){
-     <p class="dialog-hint">Выбранный список увидят участники вашей компании.</p>
+     <p class="dialog-hint">@ImportVisibilityHint</p>
      @if(Api.IsMini){<button class="soft-button" @onclick="OpenOhmywishesInBrowser">Открыть «Дарим» в браузере</button>}
      else{<button class="soft-button" disabled="@busy" @onclick="ConnectOhmywishes">@(integration.Reconnect ? "Переподключить" : "Подключить Ohmywishes")</button>}
     }
     @if(showWebForm){
      <form @onsubmit="ConnectOhmywishesWeb" @onsubmit:preventDefault>
-      <p id="ohmywishes-link-help" class="dialog-hint">Откройте нужный список в Ohmywishes и скопируйте ссылку через «Поделиться». Список должен открываться без входа. Его увидят участники вашей компании.</p>
+      <p id="ohmywishes-link-help" class="dialog-hint">Откройте нужный список в Ohmywishes и скопируйте ссылку через «Поделиться». Список должен открываться без входа. @ImportVisibilityHint</p>
       <label>Ссылка на ваш список Ohmywishes<input type="url" inputmode="url" autocapitalize="none" spellcheck="false" maxlength="512" aria-describedby="@(ohmywishesError == null ? "ohmywishes-link-help" : "ohmywishes-link-help ohmywishes-link-error")" @bind="ohmywishesWebLink" required /></label>
       @if(ohmywishesError != null){<p id="ohmywishes-link-error" class="error-box" role="alert">@ohmywishesError</p>}
       <button class="soft-button" disabled="@busy">Подключить по ссылке</button>
@@ -260,13 +299,35 @@ else{
   }
  }
  else if(dialog=="invite"){
-  <p>Пригласите близких в «@me?.Company?.Name». Участник сможет смотреть общие желания и выбирать подарки.</p>
+  <p>Пригласите близких в «@CurrentCompany?.Name». Участник сможет смотреть общие желания и выбирать подарки.</p>
   @if(inviteLink!=null){<p class="dialog-hint">@(issuedInviteLimit is null?"Без ограничения числа вступлений.":issuedInviteLimit==1?"Одноразовая ссылка: для одного вступления.":$"Ссылка для {issuedInviteLimit} вступлений.") @if(miniInviteLink!=null){<text>Обе ссылки используют общий лимит.</text>}</p><label>Ссылка на сайт<input readonly value="@inviteLink" /></label><button class="primary-button full" @onclick="()=>Copy(inviteLink)">Скопировать ссылку</button>@if(miniInviteLink!=null){<label>Ссылка в Telegram<input readonly value="@miniInviteLink" /></label><button class="soft-button full" @onclick="()=>Copy(miniInviteLink)">Скопировать для Telegram</button>}}
   else{<p class="dialog-hint">Создание новой ссылки отключит предыдущие приглашения. Участники компании сохранят доступ.</p><label>Количество вступлений<select @bind="inviteLimitMode"><option value="one">Одноразовая</option><option value="limited">Указать количество</option><option value="unlimited">Без ограничения</option></select></label>@if(inviteLimitMode=="limited"){<label>Сколько человек могут вступить<input type="number" min="1" max="100" @bind="inviteLimit" /></label>}<button class="primary-button full" disabled="@busy" @onclick="MakeInvite">Создать новую ссылку</button>}
  }
  else if(dialog=="notices"){
-  @if(notices.Length==0){<div class="empty-state"><span>🔔</span><p>Пока всё спокойно. Здесь появятся изменения подарков, которые вы дарите.</p></div>}
+  @if(notices.Length==0&&interests.Length==0){<div class="empty-state"><span>🔔</span><p>Пока всё спокойно. Здесь появятся изменения подарков, которые вы дарите.</p></div>}
+  @foreach(var interest in interests){
+   <div class="notice-item" @key="interest.Id">
+    <p>Гость тоже хочет подарить «@interest.Title».</p>
+    @if(interest.TelegramUsername is {} username){<p class="dialog-hint">Гость разрешил показать его Telegram: @username</p>}
+    @if(interest.Notified){<small>Гостю сообщили, что подарок занят</small>}
+    else{<button class="soft-button" disabled="@busy" @onclick="()=>NotifyGuest(interest.Id)">Сообщить гостю, что подарок занят</button>}
+   </div>
+  }
   @foreach(var notice in notices){<div class="notice-item"><p>@notice.Text</p><small>@notice.Created.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</small></div>}
  }
  </div>
 </dialog>
+
+@code {
+ RenderFragment VisibilityFields=>@<fieldset class="visibility-fields">
+  <legend>Кто увидит желание</legend>
+  <label><input type="radio" name="wish-visibility" value="private" checked="@(visibilityMode=="private")" @onchange='()=>visibilityMode="private"' /> Только я</label>
+  <label><input type="radio" name="wish-visibility" value="selected" checked="@(visibilityMode=="selected")" disabled="@(Companies.Length==0)" @onchange='()=>visibilityMode="selected"' /> Выбранные компании</label>
+  @if(visibilityMode=="selected"){
+   <div class="visibility-company-options">
+    @foreach(var company in Companies){<label><input type="checkbox" checked="@visibilityCompanies.Contains(company.Id)" @onchange="args=>ToggleVisibility(company.Id,args.Value is true)" /> @company.Name</label>}
+   </div>
+  }
+  <label><input type="radio" name="wish-visibility" value="all" checked="@(visibilityMode=="all")" @onchange='()=>visibilityMode="all"' /> Все мои компании, включая будущие</label>
+ </fieldset>;
+}

@@ -7,6 +7,7 @@ public sealed class OhmywishesConnection
     public string AccountId { get; set; } = "";
     public string? ProtectedTokens { get; set; }
     public bool WebApi { get; set; }
+    public Guid? DefaultCompanyId { get; set; }
     public string? ListId { get; set; }
     public string? ListTitle { get; set; }
     public DateTimeOffset? NextSync { get; set; }

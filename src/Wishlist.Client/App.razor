@@ -1,8 +1,13 @@
+@using Microsoft.AspNetCore.Components.Routing
+
 <MudThemeProvider Theme="theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
-<Wishlist.Client.Pages.Home />
+<Router AppAssembly="typeof(App).Assembly">
+ <Found Context="routeData"><RouteView RouteData="routeData" /></Found>
+ <NotFound><Wishlist.Client.Pages.Home /></NotFound>
+</Router>
 @code {
  readonly MudTheme theme=new(){PaletteLight=new PaletteLight(){Primary="#3F5F53",Secondary="#AA7047",Background="#F7F5F0",Surface="#FFFFFF",TextPrimary="#292923"}};
 }

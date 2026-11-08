@@ -18,6 +18,8 @@ builder.Services.AddSingleton<DarimMetrics>();
 builder.Services.AddSingleton<OhmywishesOptions>();
 builder.Services.AddScoped<OhmywishesSync>();
 builder.Services.AddHostedService<OhmywishesWorker>();
+builder.Services.AddScoped<WishlistLinks>();
+builder.Services.AddHostedService<WishlistRequestWorker>();
 builder.Services.AddHttpClient<OhmywishesOAuth>(client=>client.Timeout=TimeSpan.FromSeconds(15))
  .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.Services.AddHttpClient<OhmywishesMcp>(client=>client.Timeout=TimeSpan.FromSeconds(15))
@@ -90,6 +92,10 @@ app.Use(async (context, next) =>
 });
 app.Use(async(ctx,next)=>{
  ctx.Response.Headers["X-Content-Type-Options"]="nosniff";ctx.Response.Headers["Referrer-Policy"]="strict-origin-when-cross-origin";
+ if(ctx.Request.Path.StartsWithSegments("/share")){
+  ctx.Response.Headers["Referrer-Policy"]="no-referrer";
+  ctx.Response.Headers["X-Robots-Tag"]="noindex, nofollow";
+ }
  if(ctx.Request.Path.StartsWithSegments("/api")||ctx.Request.Path.StartsWithSegments("/auth"))ctx.Response.Headers.CacheControl="no-store";
  try{await next();}catch(RuleException e){await Results.Problem(e.Message,statusCode:e.Status,title:e.Message).ExecuteAsync(ctx);}catch(AntiforgeryValidationException){await Results.Problem("Обновите страницу и повторите действие.",statusCode:400).ExecuteAsync(ctx);}
 });
@@ -97,7 +103,7 @@ if(!app.Environment.IsDevelopment())app.UseHsts();
 app.UseStaticFiles();app.UseRateLimiter();app.UseAuthentication();app.UseAuthorization();
 app.MapGet("/health",async(AppDb db)=>await db.Database.CanConnectAsync()?Results.Ok(new{status="ok"}):Results.StatusCode(503));
 app.MapGet("/api/auth-info",()=>new AuthInfoDto(AuthSetup.TelegramConfigured(app.Configuration),demo,app.Configuration["Telegram:BotUsername"]));
-app.MapGet("/auth/login",()=>AuthSetup.TelegramConfigured(app.Configuration)?Results.Challenge(new AuthenticationProperties{RedirectUri="/"},["Telegram"]):Results.Problem("Настройте Telegram-вход.",statusCode:503)).RequireRateLimiting("auth");
+app.MapGet("/auth/login",(string? returnTo)=>AuthSetup.TelegramConfigured(app.Configuration)?Results.Challenge(new AuthenticationProperties{RedirectUri=returnTo=="share"?"/share":"/"},["Telegram"]):Results.Problem("Настройте Telegram-вход.",statusCode:503)).RequireRateLimiting("auth");
 app.MapPost("/auth/mini",async(MiniLoginInput input,AccountService accounts)=>{
  var identity=TelegramInitData.Validate(input.InitData,app.Configuration["Telegram:BotToken"]??"",DateTimeOffset.UtcNow);
  var u=await accounts.Login(identity);return AuthSetup.MiniToken(u,app.Configuration);
@@ -107,6 +113,7 @@ if(demo)app.MapPost("/auth/demo/{index:int}",async(int index,HttpContext ctx,App
 });
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method is not("GET" or "HEAD" or "OPTIONS")&&!ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase))await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
+app.MapWishlistSharing(api);
 static Guid UserId(HttpContext ctx)=>Guid.TryParse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier),out var id)?id:throw new RuleException("Войдите снова.",401);
 app.MapGet(OhmywishesOptions.CallbackPath,async(HttpContext ctx,OhmywishesOAuth oauth,OhmywishesSync sync)=>{
  ctx.Response.Headers["Referrer-Policy"]="no-referrer";
@@ -132,12 +139,12 @@ api.MapPost("/ohmywishes/connect",async(HttpContext ctx,OhmywishesSync sync,Ohmy
  return new OhmywishesAuthorization(oauth.Start(ctx,id,attempt));
 }).RequireRateLimiting("auth");
 api.MapPost("/ohmywishes/web-connect",async(HttpContext ctx,OhmywishesWebSelection input,OhmywishesSync sync)=>{
- await sync.ConnectWeb(UserId(ctx),input.Url,ctx.RequestAborted);
+ await sync.ConnectWeb(UserId(ctx),input.Url,ctx.RequestAborted,input.CompanyId);
  return Results.NoContent();
 }).RequireRateLimiting("auth");
 api.MapGet("/ohmywishes/lists",(HttpContext ctx,OhmywishesSync sync)=>sync.Lists(UserId(ctx),ctx.RequestAborted));
 api.MapPut("/ohmywishes/list",async(HttpContext ctx,OhmywishesSelection input,OhmywishesSync sync)=>{
- await sync.Select(UserId(ctx),input.ListId,ctx.RequestAborted);
+ await sync.Select(UserId(ctx),input.ListId,ctx.RequestAborted,input.CompanyId);
  return Results.NoContent();
 });
 api.MapPost("/ohmywishes/disconnect",async(HttpContext ctx,OhmywishesSync sync)=>{
@@ -148,19 +155,25 @@ api.MapGet("/csrf",(HttpContext ctx,IAntiforgery csrf)=>new CsrfDto(csrf.GetAndS
 api.MapGet("/me",(HttpContext ctx,AccountService svc)=>svc.Me(UserId(ctx)));
 api.MapPut("/profile",async(HttpContext ctx,ProfileInput input,AccountService svc)=>{await svc.Profile(UserId(ctx),input);return Results.NoContent();});
 api.MapPost("/company",(HttpContext ctx,CreateCompanyInput input,AccountService svc)=>svc.Create(UserId(ctx),input.Name));
-api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,AccountService svc)=>{await svc.Join(UserId(ctx),input.Token);return Results.NoContent();});
-api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses));
-api.MapGet("/gifts",(HttpContext ctx,GiftService svc)=>svc.List(UserId(ctx)));
+api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,bool? returnCompany,AccountService svc)=>{
+ var id=await svc.Join(UserId(ctx),input.Token);
+ return returnCompany==true?Results.Ok(new CompanyJoinDto(id)):Results.NoContent();
+});
+api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses,input?.CompanyId));
+api.MapGet("/gifts",(HttpContext ctx,Guid? companyId,GiftService svc)=>svc.List(UserId(ctx),companyId));
+api.MapGet("/gifts/mine",(HttpContext ctx,GiftService svc)=>svc.Mine(UserId(ctx)));
+api.MapGet("/gifts/giving",(HttpContext ctx,GiftService svc)=>svc.Giving(UserId(ctx)));
 api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
-api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input));
+api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input,ct:ctx.RequestAborted));
+api.MapPut("/gifts/{id:guid}/visibility",(Guid id,HttpContext ctx,GiftVisibility input,GiftService svc)=>svc.Change(UserId(ctx),id,visibility:input,ct:ctx.RequestAborted));
 api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,HttpContext ctx,GiftService svc)=>{
  ctx.Response.Headers.CacheControl="private, no-store";
  ctx.Response.Headers.XContentTypeOptions="nosniff";
  var photo=await svc.Photo(UserId(ctx),id,version,ctx.RequestAborted);
  return photo==null?Results.NotFound():Results.File(photo.Data,photo.ContentType);
 });
-api.MapPost("/gifts/{id:guid}/actions",(Guid id,HttpContext ctx,GiftActionInput input,GiftService svc)=>svc.Change(UserId(ctx),id,action:input));
-api.MapPost("/gifts/{id:guid}/archive",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:true));
+api.MapPost("/gifts/{id:guid}/actions",(Guid id,HttpContext ctx,GiftActionInput input,GiftService svc)=>svc.Change(UserId(ctx),id,action:input,ct:ctx.RequestAborted));
+api.MapPost("/gifts/{id:guid}/archive",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:true,ct:ctx.RequestAborted));
 api.MapGet("/notices",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);return await db.Notices.Where(x=>x.UserId==id).OrderByDescending(x=>x.Created).Take(100).Select(x=>new NoticeDto(x.Id,x.Text,x.Created,x.Read)).ToArrayAsync();});
 api.MapPost("/notices/read",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);await db.Notices.Where(x=>x.UserId==id&&!x.Read).ExecuteUpdateAsync(s=>s.SetProperty(x=>x.Read,true));return Results.NoContent();});
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync("Cookies");return Results.NoContent();});

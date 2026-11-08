@@ -203,6 +203,8 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         var donor = new AppUser { CompanyId = company.Id, TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
         var outsider = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
         db.AddRange(company, owner, donor, outsider);
+        db.Memberships.AddRange(new CompanyMembership { UserId = owner.Id, CompanyId = company.Id },
+            new CompanyMembership { UserId = donor.Id, CompanyId = company.Id });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -219,13 +221,15 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
 
         Assert.True((await sync.Status(owner.Id, default)).WebApiEnabled);
         Assert.True((await sync.Status(donor.Id, default)).WebApiEnabled);
-        Assert.False((await sync.Status(outsider.Id, default)).WebApiEnabled);
-        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(() => sync.ConnectWeb(outsider.Id, link, default))).Status);
+        Assert.True((await sync.Status(outsider.Id, default)).WebApiEnabled);
+        Assert.Equal(403, (await Assert.ThrowsAsync<RuleException>(() => sync.ConnectWeb(outsider.Id, link, default, company.Id))).Status);
         Assert.Equal(0, handler.Requests);
-        await sync.ConnectWeb(owner.Id, link, default);
-        await sync.ConnectWeb(donor.Id, link, default);
+        await sync.ConnectWeb(owner.Id, link, default, company.Id);
+        await sync.ConnectWeb(donor.Id, link, default, company.Id);
+        await sync.ConnectWeb(outsider.Id, link, default);
         await sync.RunDue(default);
         var gifts = new GiftService(db, options);
+        Assert.True(Assert.Single(await gifts.Mine(outsider.Id)).FromOhmywishes);
         var visible = await gifts.List(donor.Id);
         Assert.Equal(2, visible.Length);
         var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
@@ -250,7 +254,8 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         await sync.RunDue(default);
         Assert.Equal(requests, handler.Requests);
         Assert.Empty(await gifts.List(donor.Id));
-        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(() =>
-            gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("cancel")))).Status);
+        Assert.True(Assert.Single(await gifts.Giving(donor.Id)).Participation!.IsMine);
+        await gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("cancel"));
+        Assert.Empty(await gifts.Giving(donor.Id));
     }
 }

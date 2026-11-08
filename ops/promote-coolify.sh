@@ -21,12 +21,27 @@ test "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postg
 
 mkdir -p "$root/backups"
 backup=$(mktemp "$root/backups/pre-deploy-$sha-$pipeline-XXXXXXXX.partial")
-trap 'rm -f "$backup"' EXIT
+pause_file="$root/pause-writes-release"
+paused=false
+promotion_attempted=false
+cleanup() {
+  rm -f "$backup"
+  if [[ $paused == true && $promotion_attempted == false ]]; then
+    docker start "$app" >/dev/null
+  fi
+}
+trap cleanup EXIT
+if [[ -f $pause_file && $(< "$pause_file") == "$sha" ]] &&
+   [[ $(docker inspect -f '{{.State.Running}}' "$app") == true ]]; then
+  docker stop --time 20 "$app" >/dev/null
+  paused=true
+fi
 docker exec "$db" pg_dump -U wishlist -d wishlist -Fc > "$backup"
 docker exec -i "$db" pg_restore --list < "$backup" >/dev/null
 mv "$backup" "${backup%.partial}.dump"
 
 # Use Coolify's service action so Compose and its environment remain managed by Coolify.
+promotion_attempted=true
 result=$(docker exec -e DARIM_SERVICE_UUID="$uuid" -e DARIM_RELEASE_IMAGE="$image" coolify \
   php artisan tinker --execute='
     $service = \App\Models\Service::whereUuid(getenv("DARIM_SERVICE_UUID"))->whereName("Darim")->firstOrFail();
@@ -43,6 +58,7 @@ for ((attempt=1; attempt<=60; attempt++)); do
     marker=$(mktemp "$root/.coolify-release.XXXXXXXX")
     printf '%s-%s\n' "$sha" "$pipeline" > "$marker"
     mv "$marker" "$root/current-coolify-release"
+    if [[ -f $pause_file && $(< "$pause_file") == "$sha" ]]; then rm -f "$pause_file"; fi
     printf 'Released %s through Coolify\n' "$sha"
     exit 0
   fi

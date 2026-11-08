@@ -136,6 +136,8 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         var otherDonor = User(company);
         var outsider = User(otherCompany);
         db.AddRange(company, otherCompany, owner, donor, otherDonor, outsider);
+        db.Memberships.AddRange(new[] { owner, donor, otherDonor, outsider }
+            .Select(user => new CompanyMembership { UserId = user.Id, CompanyId = user.CompanyId!.Value }));
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
@@ -146,7 +148,7 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         var tokens = new OhmywishesTokens("access", "refresh", DateTimeOffset.UtcNow.AddHours(1));
         var attempt = await sync.BeginAuthorization(owner.Id, default);
         await sync.Connect(owner.Id, attempt, tokens, default);
-        await sync.Select(owner.Id, "list", default);
+        await sync.Select(owner.Id, "list", default, company.Id);
         await sync.RunDue(default);
         var service = new GiftService(db);
         var gift = Assert.Single(await service.List(owner.Id));
@@ -182,7 +184,8 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         await RunNow();
         Assert.Empty(await service.List(donor.Id));
         Assert.Empty(await service.List(owner.Id));
-        Assert.Equal(404, (await Assert.ThrowsAsync<RuleException>(
+        Assert.True(Assert.Single(await service.Giving(donor.Id)).Participation!.Bought);
+        Assert.Equal(409, (await Assert.ThrowsAsync<RuleException>(
             () => service.Change(donor.Id, gift.Id, action: new GiftActionInput("cancel")))).Status);
         Assert.True(await db.Notices.AnyAsync(x => x.UserId == donor.Id && x.Text.Contains("больше недоступно")));
         provider.WishPrivate = false;

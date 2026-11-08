@@ -17,9 +17,24 @@ window.wishlist = {
   const fromTg=tg?.initDataUnsafe?.start_param; // Navigation hint only; never identity or authorization.
   if(fromUrl)sessionStorage.setItem('wishlist.invite',fromUrl);
   else if(fromTg?.startsWith('join_'))sessionStorage.setItem('wishlist.invite',fromTg.slice(5));
-  return {initData:tg?.initData||'',invite:sessionStorage.getItem('wishlist.invite')||'',ohmywishes};
+  return {initData:tg?.initData||'',invite:sessionStorage.getItem('wishlist.invite')||'',ohmywishes,tab:url.searchParams.get('tab')};
  },
  clearInvite:()=>sessionStorage.removeItem('wishlist.invite'),
+ loadCompany:user=>{try{return localStorage.getItem('wishlist.company.'+user);}catch{return null;}},
+ saveCompany:(user,id)=>{try{localStorage.setItem('wishlist.company.'+user,id);}catch{}},
+ shareToken:()=>{
+  const token=location.hash.slice(1);
+  if(token){
+   try{sessionStorage.setItem('wishlist.shareToken',token);}catch{}
+   history.replaceState(history.state,'',location.pathname+location.search);
+   return token;
+  }
+  try{return sessionStorage.getItem('wishlist.shareToken')||'';}catch{return '';}
+ },
+ saveShareIntent:id=>{try{sessionStorage.setItem('wishlist.shareIntent',id);}catch{}},
+ takeShareIntent:()=>{
+  try{const id=sessionStorage.getItem('wishlist.shareIntent');sessionStorage.removeItem('wishlist.shareIntent');return id;}catch{return null;}
+ },
  showDialog:id=>{
   const dialog=document.getElementById(id);
   if(!dialog)return;
@@ -42,14 +57,14 @@ window.wishlist = {
   }catch{return false;}
   finally{URL.revokeObjectURL(url);}
  },
- watchGiftPhoto:(image,path,token)=>{
+ watchGiftPhoto:(image,path,token,scheme)=>{
   const abort=new AbortController();
   let objectUrl;
   const observer=new IntersectionObserver(async entries=>{
    if(!entries.some(entry=>entry.isIntersecting))return;
    observer.disconnect();
    try{
-    const headers=token?{Authorization:'Bearer '+token}:{};
+    const headers=token?{Authorization:scheme+' '+token}:{};
     const response=await fetch(path,{headers,signal:abort.signal});
     if(!response.ok || !response.headers.get('content-type')?.startsWith('image/'))return;
     const blob=await response.blob();

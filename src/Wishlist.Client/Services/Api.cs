@@ -11,16 +11,18 @@ public class Api(HttpClient http) {
  public bool IsMini=>token!=null;
  public void SetMini(string value){token=value;csrf=null;}
  public void Clear(){token=null;csrf=null;}
- public async Task<T> Get<T>(string path) {using var r=await Send(HttpMethod.Get,path);return (await r.Content.ReadFromJsonAsync<T>())!;}
+ public async Task<T> Get<T>(string path,string? shareToken=null) {using var r=await Send(HttpMethod.Get,path,shareToken:shareToken);return (await r.Content.ReadFromJsonAsync<T>())!;}
  public async Task<T> Post<T>(string path,object? body=null){using var r=await Send(HttpMethod.Post,path,body);return (await r.Content.ReadFromJsonAsync<T>())!;}
  public async Task Change(string path,object? body=null,bool put=false){using var r=await Send(put?HttpMethod.Put:HttpMethod.Post,path,body);}
- public ValueTask<IJSObjectReference> WatchGiftPhoto(IJSRuntime js,ElementReference image,Guid giftId,Guid version)=>
-  js.InvokeAsync<IJSObjectReference>("wishlist.watchGiftPhoto",image,$"/api/gifts/{giftId}/photo/{version}",token);
- async Task<HttpResponseMessage> Send(HttpMethod method,string path,object? body=null){
+ public async Task Delete(string path){using var r=await Send(HttpMethod.Delete,path);}
+ public ValueTask<IJSObjectReference> WatchGiftPhoto(IJSRuntime js,ElementReference image,Guid giftId,Guid version,string? shareToken=null)=>
+  js.InvokeAsync<IJSObjectReference>("wishlist.watchGiftPhoto",image,shareToken==null?$"/api/gifts/{giftId}/photo/{version}":$"/api/public/wishlist/gifts/{giftId}/photo/{version}",shareToken??token,shareToken==null?"Bearer":"Wishlist");
+ async Task<HttpResponseMessage> Send(HttpMethod method,string path,object? body=null,string? shareToken=null){
   if(method!=HttpMethod.Get && path.StartsWith("api/")&&token==null&&csrf==null)csrf=(await Get<CsrfDto>("api/csrf")).Token;
   using var req=new HttpRequestMessage(method,path);
-  if(token!=null)req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
-  if(csrf!=null)req.Headers.Add("X-CSRF-TOKEN",csrf);
+  if(shareToken!=null)req.Headers.Authorization=new AuthenticationHeaderValue("Wishlist",shareToken);
+  else if(token!=null)req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",token);
+  if(csrf!=null&&shareToken==null)req.Headers.Add("X-CSRF-TOKEN",csrf);
   if(body!=null)req.Content=JsonContent.Create(body);
   var response=await http.SendAsync(req);
   if(response.IsSuccessStatusCode)return response;

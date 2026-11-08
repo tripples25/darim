@@ -12,6 +12,8 @@ public sealed class DarimMetrics
     private readonly Counter? requests;
     private readonly Histogram? duration;
     private readonly Counter? sync;
+    private readonly Counter? wishlistRequests;
+    private readonly Histogram? wishlistRequestDelay;
 
     public DarimMetrics(IConfiguration configuration)
     {
@@ -31,6 +33,11 @@ public sealed class DarimMetrics
             });
         sync = metrics.CreateCounter("darim_ohmywishes_sync_total", "Outcomes of scheduled Ohmywishes sync.", ["outcome"]);
         foreach (var outcome in Enum.GetValues<SyncOutcome>()) sync.WithLabels(OutcomeLabel(outcome));
+        wishlistRequests = metrics.CreateCounter("darim_wishlist_request_processing_total",
+            "Outcomes of guest wishlist request processing.", ["outcome"]);
+        wishlistRequestDelay = metrics.CreateHistogram("darim_wishlist_request_delay_seconds",
+            "Delay from a guest request deadline to its processing.",
+            new HistogramConfiguration { Buckets = [0.5, 1, 2, 5, 10, 30, 60, 300, 1800, 7200] });
     }
 
     public async Task Scrape(HttpContext context)
@@ -80,6 +87,12 @@ public sealed class DarimMetrics
     }
 
     public void RecordSync(SyncOutcome outcome) => sync?.WithLabels(OutcomeLabel(outcome)).Inc();
+
+    public void RecordWishlistRequest(bool failed, double? delaySeconds = null)
+    {
+        wishlistRequests?.WithLabels(failed ? "error" : "processed").Inc();
+        if (delaySeconds is {} delay) wishlistRequestDelay?.Observe(delay);
+    }
 
     private static string OutcomeLabel(SyncOutcome outcome) => outcome switch
     {

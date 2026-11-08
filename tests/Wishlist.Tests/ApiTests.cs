@@ -17,6 +17,273 @@ namespace Wishlist.Tests;
 [Collection("Postgres")]
 public class ApiTests(PostgresFixture db) {
  const string Key="test-only-signing-secret-at-least-thirty-two-bytes";
+
+ [Fact]
+ public async Task ExistingAccountCanJoinAgainWithoutConsumingAnotherInvite()
+ {
+  var first = await Seed();
+  var second = await Seed();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, second.owner);
+  using var link = await client.PostAsJsonAsync("/api/company/invite", new InviteOptions(1, second.owner.CompanyId));
+  link.EnsureSuccessStatusCode();
+  var invite = await link.Content.ReadFromJsonAsync<InviteDto>();
+
+  Bearer(client, first.donor);
+  var request = new JoinCompanyInput(invite!.Token);
+  Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/company/join", request)).StatusCode);
+  Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/company/join", request)).StatusCode);
+  var me = await client.GetFromJsonAsync<MeDto>("/api/me");
+  Assert.Equal(new[] { first.owner.CompanyId!.Value, second.owner.CompanyId!.Value }.Order(),
+   me!.Companies!.Select(company => company.Id).Order());
+  Bearer(client, first.owner);
+  Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/company/join", request)).StatusCode);
+ }
+
+ [Fact]
+ public async Task OrganizerCanRotateOnlyTheSelectedCompanyInvite()
+ {
+  var first = await Seed();
+  var second = await Seed();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, first.owner);
+  using var response = await client.PostAsJsonAsync("/api/company/invite", new InviteOptions(1, second.owner.CompanyId));
+  Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+ }
+
+ [Fact]
+ public async Task CompanyFeedsRespectPrivateSelectedAndAllVisibility()
+ {
+  var first = await Seed();
+  var second = await Seed();
+  var outside = await Seed();
+  await Join(first.owner, second.owner);
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, first.owner);
+  var hidden = await CreateGift(client, "Личное", false);
+  var selected = await CreateGift(client, "Для одной компании", false, second.owner.CompanyId!.Value);
+  var shared = await CreateGift(client, "Для всех моих компаний", true);
+  using var unauthorized = await client.PostAsJsonAsync("/api/gifts",
+   new GiftWriteInput("Чужая компания", Visibility: new(false, [outside.owner.CompanyId!.Value])));
+  Assert.Equal(HttpStatusCode.Forbidden, unauthorized.StatusCode);
+  var mine = (await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/mine"))!;
+  Assert.Contains(mine, gift => gift.Id == hidden.Id);
+
+  Bearer(client, first.donor);
+  Assert.Equal(new[] { first.gift, shared.Id }.Order(), (await GiftIds(client, first.owner.CompanyId)).Order());
+  using var foreignFeed = await client.GetAsync($"/api/gifts?companyId={second.owner.CompanyId}");
+  Assert.Equal(HttpStatusCode.Forbidden, foreignFeed.StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync($"/api/gifts/{selected.Id}/actions", new GiftActionInput("reserve"))).StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsJsonAsync($"/api/gifts/{hidden.Id}/actions", new GiftActionInput("reserve"))).StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync($"/api/gifts/{hidden.Id}", new GiftInput("Скрытое"))).StatusCode);
+
+  Bearer(client, second.donor);
+  Assert.Equal(new[] { second.gift, selected.Id, shared.Id }.Order(), (await GiftIds(client, second.owner.CompanyId)).Order());
+  Bearer(client, outside.donor);
+  Assert.Equal(outside.gift, Assert.Single(await GiftIds(client, outside.owner.CompanyId)));
+ }
+
+ [Fact]
+ public async Task GiftPublishedInTwoCompaniesHasOneReservationWinner()
+ {
+  var first = await Seed();
+  var second = await Seed();
+  await Join(first.owner, second.owner);
+  using var app = Factory();
+  using var author = app.CreateClient();
+  Bearer(author, first.owner);
+  var gift = await CreateGift(author, "Один подарок", false, first.owner.CompanyId!.Value, second.owner.CompanyId!.Value);
+
+  using var firstClient = app.CreateClient();
+  using var secondClient = app.CreateClient();
+  Bearer(firstClient, first.donor);
+  Bearer(secondClient, second.donor);
+  var path = $"/api/gifts/{gift.Id}/actions";
+  var results = await Task.WhenAll(firstClient.PostAsJsonAsync(path, new GiftActionInput("reserve")),
+   secondClient.PostAsJsonAsync(path, new GiftActionInput("reserve")));
+  Assert.Equal(HttpStatusCode.OK, Assert.Single(results, r => r.IsSuccessStatusCode).StatusCode);
+  Assert.Equal(HttpStatusCode.Conflict, Assert.Single(results, r => !r.IsSuccessStatusCode).StatusCode);
+  foreach (var result in results) result.Dispose();
+ }
+
+ [Fact]
+ public async Task SplitDetailsAndJoiningStayInTheCompanyThatOpenedIt()
+ {
+  var first = await Seed();
+  var second = await Seed();
+  await Join(first.owner, second.owner);
+  await Join(second.owner, first.owner);
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, first.owner);
+  var gift = await CreateGift(client, "Общий подарок", true);
+  var path = $"/api/gifts/{gift.Id}/actions";
+  Bearer(client, first.donor);
+  using var split = await client.PostAsJsonAsync(path, new GiftActionInput("split", Slots: 2, CompanyId: first.owner.CompanyId));
+  split.EnsureSuccessStatusCode();
+
+  Bearer(client, second.donor);
+  var gifts = await client.GetFromJsonAsync<GiftDto[]>($"/api/gifts?companyId={second.owner.CompanyId}");
+  var occupied = Assert.Single(gifts!, item => item.Id == gift.Id).Participation!;
+  Assert.Equal("occupied", occupied.Mode);
+  Assert.Null(occupied.Participants);
+  Assert.Equal(0, occupied.Slots);
+  using var joined = await client.PostAsJsonAsync(path, new GiftActionInput("join", CompanyId: second.owner.CompanyId));
+  Assert.Equal(HttpStatusCode.Forbidden, joined.StatusCode);
+ }
+
+ [Fact]
+ public async Task GuestWishlistHidesReservationsAndConfirmsOnlyAfterTwoHours()
+ {
+  var seed = await Seed();
+  var guest = new AppUser { Name = "Гость", Username = "guest", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+  await using (var ctx = new AppDb(db.Options))
+  {
+   ctx.Users.Add(guest);
+   await ctx.SaveChangesAsync();
+  }
+  var clock = new TestClock(DateTimeOffset.UtcNow);
+  using var app = Factory().WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddSingleton<TimeProvider>(clock)));
+  using var ownerClient = app.CreateClient();
+  using var guestClient = app.CreateClient();
+  using var donorClient = app.CreateClient();
+  Bearer(ownerClient, seed.owner);
+  Bearer(guestClient, guest);
+  Bearer(donorClient, seed.donor);
+  var privateGift = await CreateGift(ownerClient, "Личный подарок", false);
+  using var linkResponse = await ownerClient.PostAsJsonAsync("/api/wishlist-links", new WishlistLinkInput(seed.owner.CompanyId, "Для друзей"));
+  linkResponse.EnsureSuccessStatusCode();
+  var link = (await linkResponse.Content.ReadFromJsonAsync<WishlistLinkCreated>())!;
+  const string publicPath = "/api/public/wishlist";
+  var requestPath = $"/api/wishlist-links/gifts/{seed.gift}/request";
+  using var publicClient = app.CreateClient();
+  publicClient.DefaultRequestHeaders.Authorization = new("Wishlist", link.Token);
+  using var initial = await publicClient.GetAsync(publicPath);
+  initial.EnsureSuccessStatusCode();
+  var firstView = await initial.Content.ReadFromJsonAsync<JsonElement>();
+  Assert.Contains(firstView.GetProperty("gifts").EnumerateArray(), gift => gift.GetProperty("id").GetGuid() == seed.gift);
+  Assert.DoesNotContain(firstView.GetProperty("gifts").EnumerateArray(), gift => gift.GetProperty("id").GetGuid() == privateGift.Id);
+  Assert.True(initial.Headers.CacheControl!.NoStore);
+
+  using var requested = await guestClient.PostAsJsonAsync(requestPath, new WishlistRequestInput(Token: link.Token));
+  Assert.Equal(HttpStatusCode.NoContent, requested.StatusCode);
+  using var repeated = await guestClient.PostAsJsonAsync(requestPath, new WishlistRequestInput(Token: link.Token));
+  Assert.Equal(HttpStatusCode.NoContent, repeated.StatusCode);
+  var actionPath = $"/api/gifts/{seed.gift}/actions";
+  Assert.Equal(HttpStatusCode.Conflict, (await donorClient.PostAsJsonAsync(actionPath, new GiftActionInput("reserve"))).StatusCode);
+
+  clock.Advance(TimeSpan.FromMinutes(119));
+  await ProcessDue();
+  var before = Assert.Single((await guestClient.GetFromJsonAsync<WishlistRequestDto[]>("/api/wishlist-requests"))!);
+  Assert.False(before.Confirmed);
+  clock.Advance(TimeSpan.FromMinutes(1));
+  await ProcessDue();
+  var after = Assert.Single((await guestClient.GetFromJsonAsync<WishlistRequestDto[]>("/api/wishlist-requests"))!);
+  Assert.True(after.Confirmed);
+  Assert.Single((await guestClient.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!);
+  Assert.Empty((await ownerClient.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!);
+  var publicView = await publicClient.GetFromJsonAsync<JsonElement>(publicPath);
+  Assert.Equal(firstView.GetRawText(), publicView.GetRawText());
+  var ownerView = (await ownerClient.GetFromJsonAsync<GiftDto[]>("/api/gifts"))!.Single(gift => gift.Id == seed.gift);
+  Assert.Null(ownerView.Participation);
+
+  using var revoked = await ownerClient.DeleteAsync($"/api/wishlist-links/{link.Link.Id}");
+  Assert.Equal(HttpStatusCode.NoContent, revoked.StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await publicClient.GetAsync(publicPath)).StatusCode);
+  Assert.True(Assert.Single((await guestClient.GetFromJsonAsync<WishlistRequestDto[]>("/api/wishlist-requests"))!).Confirmed);
+
+  async Task ProcessDue()
+  {
+   await using var scope = app.Services.CreateAsyncScope();
+   await using var ctx = scope.ServiceProvider.GetRequiredService<AppDb>();
+   await new WishlistLinks(ctx, timeProvider: clock).RunDue(default);
+  }
+ }
+
+ [Fact]
+ public async Task OccupiedGuestRequestsStayBlindAndUseTheirOriginalDeadline()
+ {
+  var seed=await Seed();
+  var guest=new AppUser{Name="Гость",Username="wishlist_guest",TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};
+  await using(var ctx=new AppDb(db.Options)){
+   ctx.Users.Add(guest);
+   await ctx.SaveChangesAsync();
+  }
+  var clock=new TestClock(DateTimeOffset.UtcNow);
+  using var app=Factory().WithWebHostBuilder(b=>b.ConfigureServices(s=>s.AddSingleton<TimeProvider>(clock)));
+  using var owner=app.CreateClient();
+  using var donor=app.CreateClient();
+  using var visitor=app.CreateClient();
+  Bearer(owner,seed.owner);
+  Bearer(donor,seed.donor);
+  Bearer(visitor,guest);
+  var released=await CreateGift(owner,"Позже освободится",true);
+  var bought=await CreateGift(owner,"Уже куплен",true);
+  foreach(var id in new[]{seed.gift,released.Id,bought.Id})
+   (await donor.PostAsJsonAsync($"/api/gifts/{id}/actions",new GiftActionInput("reserve"))).EnsureSuccessStatusCode();
+  (await donor.PostAsJsonAsync($"/api/gifts/{bought.Id}/actions",new GiftActionInput("buy"))).EnsureSuccessStatusCode();
+  var link=(await (await owner.PostAsJsonAsync("/api/wishlist-links",new WishlistLinkInput(seed.owner.CompanyId)))
+   .Content.ReadFromJsonAsync<WishlistLinkCreated>())!;
+  var input=new WishlistRequestInput(ShareUsername:true,Token:link.Token);
+  var ids=new[]{seed.gift,released.Id,bought.Id};
+  foreach(var id in ids){
+   var response=await visitor.PostAsJsonAsync($"/api/wishlist-links/gifts/{id}/request",input);
+   Assert.Equal(HttpStatusCode.NoContent,response.StatusCode);
+   Assert.Empty(await response.Content.ReadAsStringAsync());
+  }
+  Assert.Equal(HttpStatusCode.Forbidden,(await owner.PostAsJsonAsync($"/api/wishlist-links/gifts/{seed.gift}/request",input)).StatusCode);
+  var interests=(await donor.GetFromJsonAsync<WishlistInterestDto[]>("/api/wishlist-interest"))!;
+  var interest=Assert.Single(interests,x=>x.GiftId==seed.gift);
+  Assert.Equal("@wishlist_guest",interest.TelegramUsername);
+  for(var i=0;i<2;i++)
+   Assert.Equal(HttpStatusCode.NoContent,(await donor.PostAsync($"/api/wishlist-interest/{interest.Id}/notify",null)).StatusCode);
+  Assert.Equal(HttpStatusCode.NoContent,(await visitor.PostAsJsonAsync($"/api/wishlist-links/gifts/{seed.gift}/request",input)).StatusCode);
+  Assert.Single((await visitor.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!);
+  Assert.DoesNotContain((await donor.GetFromJsonAsync<WishlistInterestDto[]>("/api/wishlist-interest"))!,x=>x.GiftId==seed.gift);
+
+  clock.Advance(TimeSpan.FromMinutes(60));
+  (await donor.PostAsJsonAsync($"/api/gifts/{released.Id}/actions",new GiftActionInput("cancel"))).EnsureSuccessStatusCode();
+  Assert.Empty((await visitor.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  clock.Advance(TimeSpan.FromMinutes(60));
+  for(var i=0;i<2;i++){
+   await using var scope=app.Services.CreateAsyncScope();
+   await scope.ServiceProvider.GetRequiredService<WishlistLinks>().RunDue(default);
+  }
+  Assert.Equal(released.Id,Assert.Single((await visitor.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!).Id);
+  Assert.Equal(2,(await visitor.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!.Length);
+  Assert.Empty((await owner.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!);
+ }
+
+ sealed class TestClock(DateTimeOffset utcNow) : TimeProvider
+ {
+  private long ticks = utcNow.UtcTicks;
+  public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref ticks), TimeSpan.Zero);
+  public void Advance(TimeSpan elapsed) => Interlocked.Add(ref ticks, elapsed.Ticks);
+ }
+
+ async Task Join(AppUser joining, AppUser organizer)
+ {
+  await using var ctx = new AppDb(db.Options);
+  var accounts = new AccountService(ctx);
+  var invite = await accounts.Invite(organizer.Id, 1, organizer.CompanyId);
+  await accounts.Join(joining.Id, invite.Token);
+ }
+
+ static async Task<GiftDto> CreateGift(HttpClient client, string title, bool allCompanies, params Guid[] companyIds)
+ {
+  using var response = await client.PostAsJsonAsync("/api/gifts", new GiftWriteInput(title, Visibility: new(allCompanies, companyIds)));
+  response.EnsureSuccessStatusCode();
+  return (await response.Content.ReadFromJsonAsync<GiftDto>())!;
+ }
+
+ static async Task<Guid[]> GiftIds(HttpClient client, Guid? companyId)
+ {
+  var gifts = await client.GetFromJsonAsync<GiftDto[]>($"/api/gifts?companyId={companyId}");
+  return gifts!.Select(gift => gift.Id).ToArray();
+ }
  [Fact]
  public async Task PhotoIsVersionedAndFollowsGiftVisibility()
  {
@@ -66,7 +333,7 @@ public class ApiTests(PostgresFixture db) {
   Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"{giftPath}/photo/{restoredVersion}")).StatusCode);
  }
  WebApplicationFactory<Program> Factory(string environment="Testing")=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");});
- async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};ctx.Companies.Add(c);await ctx.SaveChangesAsync();var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};ctx.Users.AddRange(owner,donor);await ctx.SaveChangesAsync();var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
+ async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}
  [Theory][InlineData("0")][InlineData("-1")][InlineData("invalid")] public void BrowserRejectsInvalidTelegramId(string id){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234"),new("id",id)]));Assert.Throws<Wishlist.Core.RuleException>(()=>AuthSetup.IdentityFromClaims(claims));}

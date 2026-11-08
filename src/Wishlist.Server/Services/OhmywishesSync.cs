@@ -12,7 +12,7 @@ namespace Wishlist.Server.Services;
 
 public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, OhmywishesOAuth oauth,
     OhmywishesMcp mcp, IDataProtectionProvider protection, ILogger<OhmywishesSync> logger, OhmywishesWeb web,
-    DarimMetrics? metrics = null)
+    DarimMetrics? metrics = null, WishlistLinks? sharing = null)
 {
     private readonly IDataProtector tokenProtector = protection.CreateProtector("ohmywishes.tokens.v1");
     private readonly IDataProtector webLinkProtector = protection.CreateProtector("ohmywishes.share-link.v1");
@@ -20,7 +20,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     public async Task<OhmywishesStatusDto> Status(Guid userId, CancellationToken ct)
     {
         var connection = await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        var webEnabled = options.WebApiEnabled && await IsCompanyMember(userId, ct);
+        var webEnabled = options.WebApiEnabled;
         var webConnected = connection?.WebApi == true;
         return new(options.Enabled, webConnected || connection?.ProtectedTokens != null,
             connection is { WebApi: false, ProtectedTokens: null },
@@ -29,10 +29,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             webEnabled, webConnected);
     }
 
-    public async Task ConnectWeb(Guid userId, string? url, CancellationToken ct)
+    public async Task ConnectWeb(Guid userId, string? url, CancellationToken ct, Guid? companyId = null)
     {
-        if (!options.WebApiEnabled || !await IsCompanyMember(userId, ct))
+        if (!options.WebApiEnabled)
             throw new RuleException("Подключение недоступно.", 404);
+        await ValidatePublicationCompany(userId, companyId, ct);
         var link = OhmywishesWeb.ParseLink(url)
             ?? throw new RuleException("Скопируйте ссылку через «Поделиться» в отдельном списке Ohmywishes.", 400);
         var previous = await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
@@ -58,13 +59,14 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             throw new RuleException("Подключение изменилось. Попробуйте ещё раз.");
         if (connection == null)
         {
-            connection = new() { UserId = userId, WebApi = true };
+            connection = new() { UserId = userId, WebApi = true, DefaultCompanyId = companyId };
             db.OhmywishesConnections.Add(connection);
         }
         else if (connection.AccountId != source.AccountId || connection.ListId != source.ListId)
         {
             await HideGifts(userId, ct);
             ResetList(connection);
+            connection.DefaultCompanyId = companyId;
         }
         user.OhmywishesAttempt = null;
         connection.AccountId = source.AccountId;
@@ -120,10 +122,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 
     public async Task<OhmywishesListDto[]> Lists(Guid userId, CancellationToken ct) => (await ReadLists(userId, ct)).Lists;
 
-    public async Task Select(Guid userId, string? listId, CancellationToken ct)
+    public async Task Select(Guid userId, string? listId, CancellationToken ct, Guid? companyId = null)
     {
         if (string.IsNullOrWhiteSpace(listId) || listId.Length > 200)
             throw new RuleException("Выберите список Ohmywishes.", 400);
+        await ValidatePublicationCompany(userId, companyId, ct);
         var (revision, lists) = await ReadLists(userId, ct);
         var selected = lists.SingleOrDefault(x => x.Id == listId)
             ?? throw new RuleException("Этот список недоступен для импорта.", 400);
@@ -137,6 +140,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         {
             await HideGifts(userId, ct);
             ResetList(connection);
+            connection.DefaultCompanyId = companyId;
         }
         connection.ListId = selected.Id;
         connection.ListTitle = selected.Title;
@@ -300,9 +304,10 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         var existing = await LockGifts(userId, ct);
         foreach (var gift in existing)
         {
-            if (gift.CompanyId != user.CompanyId || !mapped.Remove(gift.OhmywishesKey!, out var input))
+            if (!mapped.Remove(gift.OhmywishesKey!, out var input))
             {
                 Hide(gift);
+                if (sharing != null) await sharing.Reconcile(gift, ct);
                 continue;
             }
             if (gift.Details != input.Details)
@@ -313,9 +318,12 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             gift.OhmywishesPhotoUrl = input.PhotoUrl;
             gift.OhmywishesHidden = false;
         }
+        var company = connection.DefaultCompanyId;
+        if (company != null && !await db.Memberships.AnyAsync(x => x.UserId == userId && x.CompanyId == company, ct))
+            company = null;
         foreach (var item in mapped)
         {
-            var gift = Gift.New(user.CompanyId!.Value, userId, item.Value.Details);
+            var gift = Gift.New(company, user.Id, item.Value.Details);
             gift.OhmywishesKey = item.Key;
             gift.OhmywishesPhotoUrl = item.Value.PhotoUrl;
             db.Gifts.Add(gift);
@@ -354,14 +362,17 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         await HideGifts(connection.UserId, ct);
     }
 
-    private Task<bool> IsCompanyMember(Guid userId, CancellationToken ct) =>
-        db.Users.AnyAsync(user => user.Id == userId && user.CompanyId != null, ct);
+    private async Task ValidatePublicationCompany(Guid userId, Guid? companyId, CancellationToken ct)
+    {
+        if (companyId != null && !await db.Memberships.AnyAsync(x => x.UserId == userId && x.CompanyId == companyId, ct))
+            throw new RuleException("Выберите свою компанию.", 403);
+    }
 
     private async Task<AppUser> LockCompanyMember(Guid userId, CancellationToken ct)
     {
         var user = await db.Users.FromSqlInterpolated($"""SELECT * FROM "Users" WHERE "Id"={userId} FOR NO KEY UPDATE""")
             .SingleOrDefaultAsync(ct);
-        return user?.CompanyId != null ? user : throw new RuleException("Сначала вступите в компанию.", 403);
+        return user ?? throw new RuleException("Войдите снова.", 401);
     }
 
     private async Task<List<Gift>> LockGifts(Guid userId, CancellationToken ct)
@@ -376,7 +387,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
 
     private async Task HideGifts(Guid userId, CancellationToken ct)
     {
-        foreach (var gift in await LockGifts(userId, ct)) Hide(gift);
+        foreach (var gift in await LockGifts(userId, ct))
+        {
+            Hide(gift);
+            if (sharing != null) await sharing.Reconcile(gift, ct);
+        }
     }
 
     private void Hide(Gift gift)
