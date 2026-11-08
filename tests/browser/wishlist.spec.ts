@@ -81,6 +81,7 @@ test('mobile filters can be collapsed and cleared without leaving the archive', 
 test('desktop wishlist renders without JavaScript errors',async({page})=>{const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));await login(page,'Юлия');await expect(page.locator('article').first()).toBeVisible();await page.screenshot({path:'artifacts/desktop.png',fullPage:true});expect(errors).toEqual([]);});
 
 test('Ohmywishes link errors stay next to the field after a refresh', async ({page}) => {
+ await page.setViewportSize({width:320,height:600});
  await login(page,'Юлия');
  await page.route('**/api/ohmywishes', route => route.fulfill({json:{webApiEnabled:true}}));
  const message = 'Этот список недоступен без входа в Ohmywishes.';
@@ -99,6 +100,8 @@ test('Ohmywishes link errors stay next to the field after a refresh', async ({pa
  await expect(dialog.getByRole('alert')).toHaveCount(1);
  await expect(input).toHaveValue(link);
  await expect(input).toHaveAccessibleDescription(/Этот список недоступен без входа/);
+ await section.getByRole('alert').scrollIntoViewIfNeeded();
+ await expect(dialog.getByRole('button',{name:'Закрыть',exact:true})).toBeInViewport();
 });
 
 test('Mini App validates signed launch and uses bearer session without cookies',async({page})=>{

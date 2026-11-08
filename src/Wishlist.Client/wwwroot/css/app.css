@@ -412,6 +412,7 @@
 
 #app-dialog {
   --dialog-width: 490px;
+  --dialog-padding: clamp(20px, 5vw, 27px);
   --dialog-top: calc(max(var(--tg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 12px);
   --dialog-bottom: calc(max(var(--tg-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)) + 12px);
   --dialog-left: calc(env(safe-area-inset-left, 0px) + 12px);
@@ -422,7 +423,21 @@
   inline-size: min(var(--dialog-width), calc(100% - var(--dialog-left) - var(--dialog-right)));
   block-size: fit-content;
   max-block-size: calc(100dvh - var(--dialog-top) - var(--dialog-bottom));
+  padding: 0;
+  overflow: hidden;
+}
+#app-dialog[open] { display: flex; flex-direction: column; }
+#app-dialog .dialog-heading {
+  flex: none;
+  margin: 0;
+  padding: var(--dialog-padding) var(--dialog-padding) 16px;
+}
+#app-dialog .dialog-heading .icon-button { flex: none; min-width: 44px; min-height: 44px; }
+#app-dialog .dialog-content {
+  min-block-size: 0;
+  overflow: auto;
   overscroll-behavior: contain;
+  padding: 4px var(--dialog-padding) var(--dialog-padding);
 }
 
 .ohmywishes-settings {
@@ -440,10 +455,9 @@
 
 #app-dialog.gift-editor-dialog {
   --dialog-width: 440px;
-  padding: clamp(18px, 4vw, 26px);
+  --dialog-padding: clamp(18px, 4vw, 26px);
 }
 
-.gift-editor-dialog .dialog-heading { margin-bottom: 16px; }
 .editor-form, .editor-fields { display: grid; gap: 14px; }
 .editor-form label { margin: 0; }
 .editor-form label input,

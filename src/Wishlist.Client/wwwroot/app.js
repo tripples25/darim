@@ -20,7 +20,14 @@ window.wishlist = {
   return {initData:tg?.initData||'',invite:sessionStorage.getItem('wishlist.invite')||'',ohmywishes};
  },
  clearInvite:()=>sessionStorage.removeItem('wishlist.invite'),
- showDialog:id=>{const d=document.getElementById(id);if(d&&!d.open){d.showModal();if(window.Telegram?.WebApp?.initData)window.Telegram.WebApp.BackButton.show();}},
+ showDialog:id=>{
+  const dialog=document.getElementById(id);
+  if(!dialog)return;
+  dialog.querySelector('.dialog-content').scrollTop=0;
+  if(dialog.open){dialog.querySelector('#dialog-title').focus({preventScroll:true});return;}
+  dialog.showModal();
+  if(window.Telegram?.WebApp?.initData)window.Telegram.WebApp.BackButton.show();
+ },
  closeDialog:id=>{document.getElementById(id)?.close();window.Telegram?.WebApp?.BackButton.hide();},
  copy:text=>navigator.clipboard.writeText(text),
  openExternal:url=>window.Telegram?.WebApp?.initData?window.Telegram.WebApp.openLink(url):window.open(url,'_blank','noopener,noreferrer'),

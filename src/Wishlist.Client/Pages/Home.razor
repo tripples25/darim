@@ -138,7 +138,8 @@ else{
 }
 
 <dialog id="app-dialog" class="@(dialog == "editor" ? "gift-editor-dialog" : null)" @onclose="DialogClosed" aria-labelledby="dialog-title">
- <div class="dialog-heading"><h2 id="dialog-title">@DialogTitle</h2><button class="icon-button" aria-label="Закрыть" @onclick="CloseDialog"><MudIcon Icon="@Icons.Material.Outlined.Close" /></button></div>
+ <div class="dialog-heading"><h2 id="dialog-title" tabindex="-1">@DialogTitle</h2><button class="icon-button" aria-label="Закрыть" @onclick="CloseDialog"><MudIcon Icon="@Icons.Material.Outlined.Close" /></button></div>
+ <div class="dialog-content">
  @if(!string.IsNullOrEmpty(error)){<div class="error-box" role="alert">@error</div>}
  @if(dialog=="editor"){
   <form @onsubmit="SaveGift" @onsubmit:preventDefault class="editor-form">
@@ -244,4 +245,5 @@ else{
   @if(notices.Length==0){<div class="empty-state"><span>🔔</span><p>Пока всё спокойно. Здесь появятся изменения подарков, которые вы дарите.</p></div>}
   @foreach(var notice in notices){<div class="notice-item"><p>@notice.Text</p><small>@notice.Created.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</small></div>}
  }
+ </div>
 </dialog>
