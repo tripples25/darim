@@ -63,7 +63,7 @@ window.wishlist = {
    }
   },{rootMargin:'240px'});
   // Observe the parent while the empty image is hidden and has no box.
-  observer.observe(image.parentElement);
+  observer.observe(image.closest('.gift-card') ?? image.parentElement);
   return {dispose(){
    observer.disconnect();
    abort.abort();

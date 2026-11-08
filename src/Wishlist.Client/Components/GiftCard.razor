@@ -1,12 +1,17 @@
-<article class="gift-card @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
+<article class="gift-card @(Tall ? "gift-card-tall" : "") @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
  <div class="gift-content">
   <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>} @if(Gift.FromOhmywishes){<span>· Ohmywishes</span>}</div>
-  <h3>@Gift.Details.Title</h3>
-  @if(Gift.PhotoUrl != null || Gift.PhotoVersion != null){
-   <GiftPhoto @key="(Gift.PhotoUrl, Gift.PhotoVersion)" Gift="Gift" />
+  <h3><button type="button" class="gift-title" @onclick='()=>OnAction.InvokeAsync("details")'>@Gift.Details.Title</button></h3>
+  @if(HasPhoto){
+   <figure class="gift-print">
+    <GiftPhoto @key="(Gift.PhotoUrl, Gift.PhotoVersion)" Gift="Gift" />
+   </figure>
   }
-  @if (!string.IsNullOrWhiteSpace(Gift.Details.Comment)) {
-   <p class="gift-note">@Gift.Details.Comment</p>
+  @if (Note.Length > 0) {
+   <div class="gift-note-preview"><p class="gift-note">@Note</p></div>
+   @if(LongNote){
+    <button type="button" class="gift-read-more" @onclick='()=>OnAction.InvokeAsync("details")'>Читать описание</button>
+   }
   }
   <div class="price-row"><strong>@(Gift.Details.Price is {} price?price.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" ₽":"На ваш выбор")</strong>
    @if(Gift.Details.Url is {} url){<a href="@url" target="_blank" rel="noopener noreferrer" aria-label="Открыть ссылку на подарок">В магазин <MudIcon Icon="@Icons.Material.Outlined.NorthEast" Size="Size.Small" /></a>}
@@ -36,4 +41,8 @@
  [Parameter]public bool IsOwner{get;set;}
  [Parameter]public EventCallback<string> OnAction{get;set;}
  ParticipationDto? P=>Gift.Participation;
+ string Note=>Gift.Details.Comment?.Trim() ?? "";
+ bool HasPhoto=>Gift.PhotoUrl != null || Gift.PhotoVersion != null;
+ bool LongNote=>Note.Length > 180 || Note.Count(c=>c=='\n') >= 4;
+ bool Tall=>HasPhoto || LongNote;
 }

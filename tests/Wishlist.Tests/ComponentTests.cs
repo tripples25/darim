@@ -15,7 +15,8 @@ public class ComponentTests:BunitContext {
   var gift=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,null,FromOhmywishes:true);
   var owner=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift).Add(x=>x.IsOwner,true));
   Assert.Contains("Редактируется в Ohmywishes",owner.Markup);
-  Assert.Empty(owner.FindAll("button"));
+  Assert.Empty(owner.FindAll(".card-actions button"));
+  Assert.Single(owner.FindAll("button.gift-title"));
   var donor=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift with { Participation=new("free",false,0,0,false,false,null) }));
   Assert.Contains("Ohmywishes",donor.Markup);
   Assert.Contains("Подарю сам",donor.Markup);

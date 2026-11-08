@@ -189,7 +189,10 @@ else{
  else if(dialog=="details"&&selected is {} detail){
   <h3>@detail.Details.Title</h3><p class="dialog-hint">Получатель: @detail.Owner.Name · @detail.Details.Occasion</p>
   @if(detail.PhotoUrl!=null || detail.PhotoVersion!=null){<GiftPhoto @key="(detail.PhotoUrl, detail.PhotoVersion)" Gift="detail" />}
-  @if(detail.Participation is {} p){
+  @if(!string.IsNullOrWhiteSpace(detail.Details.Comment)){
+   <p class="gift-description">@detail.Details.Comment</p>
+  }
+  @if(detail.Participation is { IsMine: true } p){
    @if(p.Participants!=null){<div class="participant-list">@foreach(var person in p.Participants){<div><span class="avatar">@Initial(person.Name)</span><span><strong>@person.Name</strong><small>@(person.Contact??"Контакт не указан")</small></span>@if(person.Id==p.CoordinatorId){<span class="coordinator-tag">координатор</span>}@if(person.Id==me!.User.Id){<span class="quiet-note">вы</span>}</div>}</div><p class="dialog-hint">Занято @p.Taken из @p.Slots. Координатор связывается с участниками и организует покупку.</p>}
    @if(detail.Original is {} original&&original!=detail.Details){<div class="change-warning"><strong>Желание изменилось после брони</strong><p>Изначально: @original.Title · @(original.Price?.ToString("N0")??"цена не указана") ₽ · @original.Occasion</p>@if(original.Url is {} oldUrl){<a href="@oldUrl" target="_blank" rel="noopener noreferrer">Исходная ссылка ↗</a>}<p>@original.Comment</p></div>}
    @if(detail.Archived){<p class="dialog-hint">Желание в архиве. История покупки сохранена.</p>}
