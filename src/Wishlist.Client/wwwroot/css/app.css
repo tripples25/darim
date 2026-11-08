@@ -524,6 +524,33 @@
   background: var(--soft);
 }
 .gift-photo[hidden] { display: none; }
+.startup-shell {
+  max-width: 1450px;
+  margin-inline: auto;
+  padding: 24px clamp(20px, 5vw, 42px);
+}
+.startup-header {
+  padding-block-end: 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--note-font);
+  font-size: 30px;
+}
+.startup-header span { color: var(--accent); }
+.startup-placeholders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 24px;
+  margin-block-start: 24px;
+}
+.startup-placeholders span {
+  height: clamp(112px, 20vw, 210px);
+  border-radius: 10px;
+  background: var(--soft);
+  visibility: hidden;
+  animation: show-startup-placeholder 0s 100ms forwards;
+}
+@keyframes show-startup-placeholder { to { visibility: visible; } }
 .company-picker {
   min-width: 0;
   max-width: 230px;

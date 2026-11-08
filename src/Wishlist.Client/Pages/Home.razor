@@ -6,7 +6,7 @@
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
 
-@if(!ready){<div class="boot"><span class="boot-gift">🎁</span><strong>Дарим</strong><p>Загружаем ваши желания…</p><progress aria-label="Загрузка"></progress></div>}
+@if(!ready){<StartupShell />}
 else if(me==null){
  <main class="welcome">
   <a class="brand" href="/"><span class="brand-icon"><MudIcon Icon="@Icons.Material.Outlined.Redeem" /></span>дарим<span class="brand-dot">.</span></a>
