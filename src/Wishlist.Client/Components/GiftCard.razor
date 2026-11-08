@@ -2,6 +2,9 @@
  <div class="gift-content">
   <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>} @if(Gift.FromOhmywishes){<span>· Ohmywishes</span>}</div>
   <h3>@Gift.Details.Title</h3>
+  @if(Gift.PhotoUrl != null || Gift.PhotoVersion != null){
+   <GiftPhoto @key="(Gift.PhotoUrl, Gift.PhotoVersion)" Gift="Gift" />
+  }
   @if (!string.IsNullOrWhiteSpace(Gift.Details.Comment)) {
    <p class="gift-note">@Gift.Details.Comment</p>
   }

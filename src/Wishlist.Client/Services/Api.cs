@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using Wishlist.Contracts;
 namespace Wishlist.Client.Services;
 public class Api(HttpClient http) {
@@ -12,6 +14,8 @@ public class Api(HttpClient http) {
  public async Task<T> Get<T>(string path) {using var r=await Send(HttpMethod.Get,path);return (await r.Content.ReadFromJsonAsync<T>())!;}
  public async Task<T> Post<T>(string path,object? body=null){using var r=await Send(HttpMethod.Post,path,body);return (await r.Content.ReadFromJsonAsync<T>())!;}
  public async Task Change(string path,object? body=null,bool put=false){using var r=await Send(put?HttpMethod.Put:HttpMethod.Post,path,body);}
+ public ValueTask<IJSObjectReference> WatchGiftPhoto(IJSRuntime js,ElementReference image,Guid giftId,Guid version)=>
+  js.InvokeAsync<IJSObjectReference>("wishlist.watchGiftPhoto",image,$"/api/gifts/{giftId}/photo/{version}",token);
  async Task<HttpResponseMessage> Send(HttpMethod method,string path,object? body=null){
   if(method!=HttpMethod.Get && path.StartsWith("api/")&&token==null&&csrf==null)csrf=(await Get<CsrfDto>("api/csrf")).Token;
   using var req=new HttpRequestMessage(method,path);

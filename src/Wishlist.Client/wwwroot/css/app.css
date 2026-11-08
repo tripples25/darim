@@ -464,6 +464,35 @@
 .editor-form label select,
 .editor-form label textarea { font-size: 16px; }
 .editor-form ::placeholder { color: var(--muted); opacity: 1; }
+.gift-photo {
+  display: block;
+  width: 100%;
+  max-height: 230px;
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--soft);
+}
+.gift-photo[hidden] { display: none; }
+.gift-content > .gift-photo, .dialog-content > .gift-photo { margin-block: 8px 12px; }
+.editor-photo { display: grid; gap: 8px; }
+.editor-photo:has(.gift-photo:not([hidden])) { grid-template-columns: 72px minmax(0, 1fr); align-items: center; }
+.editor-photo .gift-photo { width: 72px; aspect-ratio: 1; }
+.editor-photo > small { grid-column: 1 / -1; }
+.editor-photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.editor-photo-actions .soft-button { min-height: 44px; font-size: 13px; padding: 8px 12px; }
+.editor-form .editor-photo-picker { position: relative; display: inline-flex; flex-direction: row; cursor: pointer; }
+.editor-photo-picker:focus-within { outline: 2px solid var(--green); outline-offset: 3px; }
+.editor-photo-picker:has(input:disabled) { opacity: .5; cursor: wait; }
+.editor-photo-picker .editor-photo-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+.editor-photo .error-box { margin: 0; }
 .editor-form .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .editor-extras { border-block: 1px solid var(--line); }
 .editor-extras summary {

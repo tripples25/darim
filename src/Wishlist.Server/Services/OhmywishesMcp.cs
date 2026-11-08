@@ -5,6 +5,8 @@ using Wishlist.Contracts;
 
 namespace Wishlist.Server.Services;
 
+public sealed record OhmywishesWish(GiftInput Details, string? PhotoUrl);
+
 public sealed class OhmywishesMcp(HttpClient http)
 {
     public async Task<string> Account(string token, CancellationToken ct)
@@ -21,7 +23,7 @@ public sealed class OhmywishesMcp(HttpClient http)
             .Select(item => new OhmywishesListDto(Id(item), RequiredString(item, "title", "name"))).ToArray();
     }
 
-    public async Task<Dictionary<string, GiftInput>> Snapshot(string token, string listId, CancellationToken ct)
+    public async Task<Dictionary<string, OhmywishesWish>> Snapshot(string token, string listId, CancellationToken ct)
     {
         await using var session = await Connect(token, ct);
         var lists = await Pages(session, "list_my_wishlists", null, ct);
@@ -32,7 +34,7 @@ public sealed class OhmywishesMcp(HttpClient http)
         if (String(selected, "visibility") is not ("public" or "inherit" or "by_link"))
             throw new InvalidDataException("Unknown Ohmywishes list visibility.");
         var wishes = await Pages(session, "list_my_wishes", listId, ct);
-        var snapshot = new Dictionary<string, GiftInput>(StringComparer.Ordinal);
+        var snapshot = new Dictionary<string, OhmywishesWish>(StringComparer.Ordinal);
         foreach (var item in wishes)
         {
             if (!Shareable(item)) continue;
@@ -81,14 +83,14 @@ public sealed class OhmywishesMcp(HttpClient http)
         };
     }
 
-    public static GiftInput? ReadWish(JsonElement detail)
+    public static OhmywishesWish? ReadWish(JsonElement detail)
     {
         if (!Shareable(detail) || (Property(detail, out var fulfilled, "isFulfilled", "fulfilled")
             && fulfilled.ValueKind == JsonValueKind.True)) return null;
         return ReadWishFields(detail);
     }
 
-    internal static GiftInput ReadWishFields(JsonElement detail)
+    internal static OhmywishesWish ReadWishFields(JsonElement detail)
     {
         var title = RequiredString(detail, "title").Trim();
         var description = String(detail, "description")?.Trim();
@@ -100,8 +102,30 @@ public sealed class OhmywishesMcp(HttpClient http)
             && Property(amount, out var numeric, "amount", "price") && numeric.ValueKind == JsonValueKind.Number
             && numeric.TryGetDecimal(out var value) && value is >= 0 and <= 100000000)
             price = decimal.Round(value, 2, MidpointRounding.AwayFromZero);
-        return new(Limit(title, 160), link, price, description == null ? null : Limit(description, 2000));
+        return new(new(Limit(title, 160), link, price, description == null ? null : Limit(description, 2000)),
+            ReadPhoto(detail));
     }
+
+    private static string? ReadPhoto(JsonElement detail)
+    {
+        if (!Property(detail, out var photos, "photos") || photos.ValueKind != JsonValueKind.Array)
+            return null;
+        foreach (var photo in photos.EnumerateArray())
+        {
+            if (!Property(photo, out var image, "image")) continue;
+            if (Property(image, out var thumbnails, "thumbnails") && thumbnails.ValueKind == JsonValueKind.Array)
+                foreach (var thumbnail in thumbnails.EnumerateArray())
+                    if (PhotoUrl(thumbnail) is { } preview) return preview;
+            if (PhotoUrl(image) is { } original) return original;
+        }
+        return null;
+    }
+
+    private static string? PhotoUrl(JsonElement image) =>
+        String(image, "url") is { Length: > 0 and <= 2048 } url
+        && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+        && uri.Host == "cdn.ohmywish.es" && uri.IsDefaultPort && uri.UserInfo.Length == 0
+            ? uri.AbsoluteUri : null;
 
     private static string Limit(string value, int length) => value.Length <= length ? value
         : value[..(char.IsHighSurrogate(value[length - 1]) ? length - 1 : length)];

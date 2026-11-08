@@ -31,7 +31,45 @@ window.wishlist = {
  closeDialog:id=>{document.getElementById(id)?.close();window.Telegram?.WebApp?.BackButton.hide();},
  copy:text=>navigator.clipboard.writeText(text),
  openExternal:url=>window.Telegram?.WebApp?.initData?window.Telegram.WebApp.openLink(url):window.open(url,'_blank','noopener,noreferrer'),
- watchFocus:ref=>{const fn=()=>{if(!document.hidden)ref.invokeMethodAsync('RefreshFromFocus');};document.addEventListener('visibilitychange',fn);window.addEventListener('focus',fn);return null;}
+ watchFocus:ref=>{const fn=()=>{if(!document.hidden)ref.invokeMethodAsync('RefreshFromFocus');};document.addEventListener('visibilitychange',fn);window.addEventListener('focus',fn);return null;},
+ canPreviewPhoto:async(data,type)=>{
+  const url=URL.createObjectURL(new Blob([data],{type}));
+  try{
+   const image=new Image();
+   image.src=url;
+   await image.decode();
+   return true;
+  }catch{return false;}
+  finally{URL.revokeObjectURL(url);}
+ },
+ watchGiftPhoto:(image,path,token)=>{
+  const abort=new AbortController();
+  let objectUrl;
+  const observer=new IntersectionObserver(async entries=>{
+   if(!entries.some(entry=>entry.isIntersecting))return;
+   observer.disconnect();
+   try{
+    const headers=token?{Authorization:'Bearer '+token}:{};
+    const response=await fetch(path,{headers,signal:abort.signal});
+    if(!response.ok || !response.headers.get('content-type')?.startsWith('image/'))return;
+    const blob=await response.blob();
+    if(abort.signal.aborted)return;
+    objectUrl=URL.createObjectURL(blob);
+    image.src=objectUrl;
+    await image.decode();
+    if(!abort.signal.aborted)image.hidden=false;
+   }catch{
+    if(objectUrl)URL.revokeObjectURL(objectUrl);
+   }
+  },{rootMargin:'240px'});
+  // Observe the parent while the empty image is hidden and has no box.
+  observer.observe(image.parentElement);
+  return {dispose(){
+   observer.disconnect();
+   abort.abort();
+   if(objectUrl)URL.revokeObjectURL(objectUrl);
+  }};
+ }
 };
 
 document.addEventListener('invalid', event => {

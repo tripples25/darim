@@ -147,6 +147,25 @@ else{
     <label>Что хочется?<input @bind="editTitle" required maxlength="160" placeholder="Название подарка" autofocus /></label>
     <label>Ссылка на подарок<input type="url" @bind="editUrl" maxlength="2048" placeholder="https://" /></label>
    </div>
+   <div class="editor-photo">
+    @if(editPhotoPreview is {} preview){
+     <img class="gift-photo" src="@preview" alt="Предпросмотр фотографии" />
+    }else if(!removeEditPhoto && selected is { PhotoVersion: not null } existingPhoto){
+     <GiftPhoto @key="existingPhoto.PhotoVersion" Gift="existingPhoto" />
+    }
+    <div class="editor-photo-actions">
+     <label class="editor-photo-picker soft-button">
+      <MudIcon Icon="@Icons.Material.Outlined.AddPhotoAlternate" Size="Size.Small" />
+      @(editPhoto!=null || (!removeEditPhoto && selected?.PhotoVersion!=null) ? "Заменить фото" : "Добавить фото")
+      <InputFile @key="photoPickerKey" class="editor-photo-input" OnChange="ChooseGiftPhoto" accept="image/jpeg,image/png,image/webp" disabled="@(busy || readingEditPhoto)" />
+     </label>
+     @if(editPhoto!=null || (!removeEditPhoto && selected?.PhotoVersion!=null)){
+      <button type="button" class="soft-button" disabled="@(busy || readingEditPhoto)" @onclick="RemoveGiftPhoto">Удалить фото</button>
+     }
+    </div>
+    @if(readingEditPhoto){<small role="status">Читаем фото…</small>}
+    @if(editPhotoError is {} photoError){<small class="error-box" role="alert">@photoError</small>}
+   </div>
    <details class="editor-extras" open="@(selected != null)">
     <summary>Дополнительные параметры <MudIcon Icon="@Icons.Material.Outlined.ExpandMore" Size="Size.Small" /></summary>
     <div class="editor-fields">
@@ -161,7 +180,7 @@ else{
      <label>Подсказка для друзей<textarea @bind="editComment" maxlength="2000" rows="3" placeholder="Цвет, размер или почему это вас порадует"></textarea></label>
     </div>
    </details>
-   <button class="primary-button full" disabled="@busy">@(busy?"Сохраняем…":"Сохранить желание")</button>
+   <button class="primary-button full" disabled="@(busy || readingEditPhoto)">@(busy?"Сохраняем…":"Сохранить желание")</button>
   </form>
  }
  else if(dialog=="split"&&selected!=null){
@@ -169,6 +188,7 @@ else{
  }
  else if(dialog=="details"&&selected is {} detail){
   <h3>@detail.Details.Title</h3><p class="dialog-hint">Получатель: @detail.Owner.Name · @detail.Details.Occasion</p>
+  @if(detail.PhotoUrl!=null || detail.PhotoVersion!=null){<GiftPhoto @key="(detail.PhotoUrl, detail.PhotoVersion)" Gift="detail" />}
   @if(detail.Participation is {} p){
    @if(p.Participants!=null){<div class="participant-list">@foreach(var person in p.Participants){<div><span class="avatar">@Initial(person.Name)</span><span><strong>@person.Name</strong><small>@(person.Contact??"Контакт не указан")</small></span>@if(person.Id==p.CoordinatorId){<span class="coordinator-tag">координатор</span>}@if(person.Id==me!.User.Id){<span class="quiet-note">вы</span>}</div>}</div><p class="dialog-hint">Занято @p.Taken из @p.Slots. Координатор связывается с участниками и организует покупку.</p>}
    @if(detail.Original is {} original&&original!=detail.Details){<div class="change-warning"><strong>Желание изменилось после брони</strong><p>Изначально: @original.Title · @(original.Price?.ToString("N0")??"цена не указана") ₽ · @original.Occasion</p>@if(original.Url is {} oldUrl){<a href="@oldUrl" target="_blank" rel="noopener noreferrer">Исходная ссылка ↗</a>}<p>@original.Comment</p></div>}

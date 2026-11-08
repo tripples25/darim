@@ -17,6 +17,54 @@ namespace Wishlist.Tests;
 [Collection("Postgres")]
 public class ApiTests(PostgresFixture db) {
  const string Key="test-only-signing-secret-at-least-thirty-two-bytes";
+ [Fact]
+ public async Task PhotoIsVersionedAndFollowsGiftVisibility()
+ {
+  var seed=await Seed();
+  var png=Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC");
+  using var app=Factory();
+  using var client=app.CreateClient();
+  Bearer(client,seed.owner);
+  using var created=await client.PostAsJsonAsync("/api/gifts",new GiftWriteInput("Книга",Photo:png));
+  created.EnsureSuccessStatusCode();
+  var gift=(await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  Assert.NotNull(gift.PhotoVersion);
+  var giftPath=$"/api/gifts/{gift.Id}";
+  var photoPath=$"{giftPath}/photo/{gift.PhotoVersion}";
+  Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(giftPath,
+   new GiftWriteInput("Книга",Photo:"<svg/>"u8.ToArray()))).StatusCode);
+  Bearer(client,seed.donor);
+  using var photo=await client.GetAsync(photoPath);
+  photo.EnsureSuccessStatusCode();
+  Assert.Equal("image/png",photo.Content.Headers.ContentType!.MediaType);
+  Assert.True(photo.Headers.CacheControl!.NoStore);
+  Assert.Equal(png,await photo.Content.ReadAsByteArrayAsync());
+  Assert.Equal(HttpStatusCode.Forbidden,(await client.PutAsJsonAsync(giftPath,
+   new GiftWriteInput("Книга",RemovePhoto:true))).StatusCode);
+  client.DefaultRequestHeaders.Authorization=null;
+  Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync(photoPath)).StatusCode);
+
+  Bearer(client,seed.owner);
+  using var textEdit=await client.PutAsJsonAsync(giftPath,new GiftInput("Новая книга"));
+  textEdit.EnsureSuccessStatusCode();
+  Assert.Equal(gift.PhotoVersion,(await textEdit.Content.ReadFromJsonAsync<GiftDto>())!.PhotoVersion);
+  using var replacement=await client.PutAsJsonAsync(giftPath,new GiftWriteInput("Новая книга",Photo:png));
+  replacement.EnsureSuccessStatusCode();
+  var replaced=(await replacement.Content.ReadFromJsonAsync<GiftDto>())!;
+  Assert.NotEqual(gift.PhotoVersion,replaced.PhotoVersion);
+  Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync(photoPath)).StatusCode);
+  using var removed=await client.PutAsJsonAsync(giftPath,new GiftWriteInput("Новая книга",RemovePhoto:true));
+  removed.EnsureSuccessStatusCode();
+  Assert.Null((await removed.Content.ReadFromJsonAsync<GiftDto>())!.PhotoVersion);
+  Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"{giftPath}/photo/{replaced.PhotoVersion}")).StatusCode);
+
+  using var restored=await client.PutAsJsonAsync(giftPath,new GiftWriteInput("Новая книга",Photo:png));
+  restored.EnsureSuccessStatusCode();
+  var restoredVersion=(await restored.Content.ReadFromJsonAsync<GiftDto>())!.PhotoVersion;
+  (await client.PostAsync($"{giftPath}/archive",null)).EnsureSuccessStatusCode();
+  Bearer(client,seed.donor);
+  Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"{giftPath}/photo/{restoredVersion}")).StatusCode);
+ }
  WebApplicationFactory<Program> Factory(string environment="Testing")=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};ctx.Companies.Add(c);await ctx.SaveChangesAsync();var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};ctx.Users.AddRange(owner,donor);await ctx.SaveChangesAsync();var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}

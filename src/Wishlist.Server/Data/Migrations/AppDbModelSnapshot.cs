@@ -63,10 +63,16 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<string>("OhmywishesKey")
                         .HasColumnType("text");
 
+                    b.Property<string>("OhmywishesPhotoUrl")
+                        .HasColumnType("text");
+
                     b.Property<string>("OriginalJson")
                         .HasColumnType("text");
 
                     b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PhotoVersion")
                         .HasColumnType("uuid");
 
                     b.Property<decimal?>("Price")
@@ -181,6 +187,24 @@ namespace Wishlist.Server.Data.Migrations
                     b.ToTable("Companies");
                 });
 
+            modelBuilder.Entity("Wishlist.Server.Data.GiftPhoto", b =>
+                {
+                    b.Property<Guid>("GiftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("GiftId");
+
+                    b.ToTable("GiftPhotos");
+                });
+
             modelBuilder.Entity("Wishlist.Server.Data.Notice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -274,6 +298,15 @@ namespace Wishlist.Server.Data.Migrations
                         .WithMany()
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Wishlist.Server.Data.GiftPhoto", b =>
+                {
+                    b.HasOne("Wishlist.Core.Gift", null)
+                        .WithOne()
+                        .HasForeignKey("Wishlist.Server.Data.GiftPhoto", "GiftId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Wishlist.Server.Data.Notice", b =>

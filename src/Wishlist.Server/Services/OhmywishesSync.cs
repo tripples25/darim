@@ -261,7 +261,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return job;
     }
 
-    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, GiftInput> snapshot, CancellationToken ct)
+    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, OhmywishesWish> snapshot, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
@@ -279,17 +279,19 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 Hide(gift);
                 continue;
             }
-            if (gift.Details != input)
+            if (gift.Details != input.Details)
             {
-                gift.Edit(userId, input);
+                gift.Edit(userId, input.Details);
                 Notify(gift, "Желание изменилось в Ohmywishes.");
             }
+            gift.OhmywishesPhotoUrl = input.PhotoUrl;
             gift.OhmywishesHidden = false;
         }
         foreach (var item in mapped)
         {
-            var gift = Gift.New(user.CompanyId!.Value, userId, item.Value);
+            var gift = Gift.New(user.CompanyId!.Value, userId, item.Value.Details);
             gift.OhmywishesKey = item.Key;
+            gift.OhmywishesPhotoUrl = item.Value.PhotoUrl;
             db.Gifts.Add(gift);
         }
         connection.LastSuccess = DateTimeOffset.UtcNow;

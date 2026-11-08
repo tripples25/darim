@@ -36,7 +36,7 @@ public class OhmywishesWebTests
         var source = await web.Resolve(link, default);
         Assert.Equal(Account, source!.AccountId);
         var snapshot = await web.Snapshot(Account, List, default);
-        Assert.Equal("Книга", Assert.Single(snapshot).Value.Title);
+        Assert.Equal("Книга", Assert.Single(snapshot).Value.Details.Title);
         handler.ListRequiresSignIn = true;
         Assert.Empty(await web.Snapshot(Account, List, default));
         handler.ListRequiresSignIn = false;
@@ -57,7 +57,9 @@ public class OhmywishesWebTests
         Assert.Equal(List, source.ListId);
         Assert.Equal(Shared, source.ShareToken);
         var snapshot = await web.Snapshot(source.AccountId, source.ListId, default, source.ShareToken);
-        Assert.Equal("По ссылке", Assert.Single(snapshot).Value.Title);
+        var imported = Assert.Single(snapshot).Value;
+        Assert.Equal("По ссылке", imported.Details.Title);
+        Assert.Equal("https://cdn.ohmywish.es/thumb.webp", imported.PhotoUrl);
         Assert.Equal(0, handler.GlobalWishRequests);
         handler.ListRequiresSignIn = true;
         Assert.Empty(await web.Snapshot(source.AccountId, source.ListId, default, source.ShareToken));
@@ -94,6 +96,7 @@ public class OhmywishesWebTests
         public bool ProfilePrivate { get; set; }
         public bool ListRequiresSignIn { get; set; }
         public bool GatewayDenies { get; set; }
+        public string? PhotoUrl { get; set; } = "https://cdn.ohmywish.es/book.webp";
         public int Requests { get; private set; }
         public int GlobalWishRequests { get; private set; }
 
@@ -122,9 +125,15 @@ public class OhmywishesWebTests
                 var path when path == root + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
                 var path when path == sharedRoot => new { item = new { id = List, title = "Подарки", visibility = "by_link" } },
                 var path when path == sharedRoot + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
-                var path when path == sharedRoot + $"/wishes-v2/{Wish}" => new { item = new { id = Wish, title = "По ссылке", creator = new { id = Account } } },
+                var path when path == sharedRoot + $"/wishes-v2/{Wish}" => new { item = new { id = Wish, title = "По ссылке", creator = new { id = Account },
+                    photos = new object[] {
+                        new { image = new { url = "https://cdn.ohmywish.es.evil.test/invalid.webp" } },
+                        new { image = new { url = "https://cdn.ohmywish.es/full.webp",
+                            thumbnails = new[] { new { url = "https://cdn.ohmywish.es/thumb.webp", width = 640, height = 640 } } } }
+                    } } },
                 $"/api/v3/wishes/{Wish}" => new { item = new { id = Wish, title = "Книга", visibility = Visibility,
                     isPrivate = Visibility == "private", isFulfilled = false, creator = new { id = Account },
+                    photos = PhotoUrl == null ? [] : new[] { new { image = new { url = PhotoUrl } } },
                     wishLists = new[] { new { id = List } } } },
                 _ => throw new InvalidOperationException("Unexpected web API route.")
             };
@@ -172,7 +181,16 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         Assert.Equal(2, visible.Length);
         var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
         Assert.True(imported.FromOhmywishes);
+        Assert.Equal(handler.PhotoUrl, imported.PhotoUrl);
         await gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("reserve"));
+
+        handler.PhotoUrl = null;
+        await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
+        await sync.RunDue(default);
+        var updated = Assert.Single(await gifts.List(donor.Id), gift => gift.Id == imported.Id);
+        Assert.Null(updated.PhotoUrl);
+        Assert.True(updated.Participation!.IsMine);
 
         config["Ohmywishes:WebApiEnabled"] = "false";
         await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)

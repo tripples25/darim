@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using MudBlazor;
@@ -12,6 +13,10 @@ public partial class Home {
  bool ohmywishesLoading;string? ohmywishesError;
  string ohmywishesWebLink="";
  string editTitle="",editUrl="",editComment="",editOccasion="Без повода",editCustomOccasion="";decimal? editPrice;DateTime? editDate;
+ byte[]? editPhoto;
+ string? editPhotoPreview,editPhotoError;
+ bool removeEditPhoto,readingEditPhoto;
+ int editorRevision,photoPickerKey;
  string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
  readonly string[] demoNames=["Юлия","Макс","Аня","Саша"];
  readonly CancellationTokenSource lifetime=new();DotNetObjectReference<Home>? reference;Task? polling;
@@ -90,9 +95,53 @@ public partial class Home {
  }
  async Task Show(string value){dialog=value;error=null;StateHasChanged();await JS.InvokeVoidAsync("wishlist.showDialog","app-dialog");}
  async Task CloseDialog(){await JS.InvokeVoidAsync("wishlist.closeDialog","app-dialog");dialog=null;}
- void DialogClosed(){dialog=null;error=null;}
- async Task OpenEditor(GiftDto? gift){selected=gift;var d=gift?.Details;editTitle=d?.Title??"";editUrl=d?.Url??"";editPrice=d?.Price;editComment=d?.Comment??"";editDate=d?.OccasionDate?.ToDateTime(TimeOnly.MinValue);editOccasion=d?.Occasion??"Без повода";editCustomOccasion="";if(editOccasion is not("Без повода" or "День рождения" or "Новый год")){editCustomOccasion=editOccasion;editOccasion="custom";}await Show("editor");}
- async Task SaveGift()=>await Run(async()=>{var input=new GiftInput(editTitle,editUrl,editPrice,editComment,editOccasion=="custom"?editCustomOccasion:editOccasion,editDate is {} date?DateOnly.FromDateTime(date):null);await Api.Change(selected==null?"api/gifts":$"api/gifts/{selected.Id}",input,selected!=null);Snackbar.Add("Желание сохранено",Severity.Success);},true);
+ void DialogClosed(){dialog=null;error=null;ResetPhotoDraft();}
+ async Task OpenEditor(GiftDto? gift){selected=gift;ResetPhotoDraft();var d=gift?.Details;editTitle=d?.Title??"";editUrl=d?.Url??"";editPrice=d?.Price;editComment=d?.Comment??"";editDate=d?.OccasionDate?.ToDateTime(TimeOnly.MinValue);editOccasion=d?.Occasion??"Без повода";editCustomOccasion="";if(editOccasion is not("Без повода" or "День рождения" or "Новый год")){editCustomOccasion=editOccasion;editOccasion="custom";}await Show("editor");}
+ void ResetPhotoDraft(){
+  editorRevision++;photoPickerKey++;
+  editPhoto=null;editPhotoPreview=null;editPhotoError=null;removeEditPhoto=false;readingEditPhoto=false;
+ }
+ async Task ChooseGiftPhoto(InputFileChangeEventArgs args){
+  if(readingEditPhoto || busy)return;
+  var revision=editorRevision;
+  readingEditPhoto=true;editPhotoError=null;
+  try{
+   if(args.File.Size>GiftWriteInput.MaxPhotoBytes){
+    editPhotoError="Фото должно занимать не больше 5 МБ.";
+    return;
+   }
+   using var stream=args.File.OpenReadStream(GiftWriteInput.MaxPhotoBytes);
+   using var buffer=new MemoryStream();
+   await stream.CopyToAsync(buffer);
+   if(revision!=editorRevision)return;
+   var data=buffer.ToArray();
+   if(GiftPhotoFormat.ContentType(data) is not {} type){
+    editPhotoError="Выберите фото в формате JPEG, PNG или WebP.";
+    return;
+   }
+   var valid=await JS.InvokeAsync<bool>("wishlist.canPreviewPhoto",data,type);
+   if(revision!=editorRevision)return;
+   if(!valid){editPhotoError="Фотография повреждена. Выберите другой файл.";return;}
+   editPhoto=data;editPhotoPreview=$"data:{type};base64,{Convert.ToBase64String(data)}";removeEditPhoto=false;
+  }catch(Exception ex)when(ex is IOException or JSException){
+   if(revision==editorRevision)editPhotoError="Не удалось прочитать фото. Выберите файл ещё раз.";
+  }finally{
+   if(revision==editorRevision){readingEditPhoto=false;photoPickerKey++;}
+  }
+ }
+ void RemoveGiftPhoto(){
+  editPhoto=null;editPhotoPreview=null;editPhotoError=null;
+  removeEditPhoto=selected?.PhotoVersion!=null;
+ }
+ async Task SaveGift(){
+  if(readingEditPhoto)return;
+  await Run(async()=>{
+   var input=new GiftWriteInput(editTitle,editUrl,editPrice,editComment,editOccasion=="custom"?editCustomOccasion:editOccasion,
+    editDate is {} date?DateOnly.FromDateTime(date):null,editPhoto,removeEditPhoto);
+   await Api.Change(selected==null?"api/gifts":$"api/gifts/{selected.Id}",input,selected!=null);
+   Snackbar.Add("Желание сохранено",Severity.Success);
+  },true);
+ }
  async Task GiftAction(GiftDto gift,string action){selected=gift;transferTo="";switch(action){case "edit":await OpenEditor(gift);break;case "details":await Show("details");break;case "split":if(me!.Company!.Members.Length<3){Snackbar.Add("Для распила нужны получатель и минимум два дарителя. Пригласите друзей.",Severity.Info);return;}if(string.IsNullOrWhiteSpace(me.User.Contact)){await OpenProfile();Snackbar.Add("Сначала укажите контакт для участников распила.",Severity.Info);return;}splitSlots=2;await Show("split");break;case "join":if(string.IsNullOrWhiteSpace(me!.User.Contact)){await OpenProfile();Snackbar.Add("Сначала укажите контакт.",Severity.Info);return;}await Run(()=>Api.Change($"api/gifts/{gift.Id}/actions",new GiftActionInput("join")));break;default:await Confirm(action);break;}}
  async Task Confirm(string action){confirmAction=action;await Show("confirm");}
  async Task ExecuteConfirmed()=>await Run(()=>Api.Change(confirmAction=="archive"?$"api/gifts/{selected!.Id}/archive":$"api/gifts/{selected!.Id}/actions",confirmAction=="archive"?null:new GiftActionInput(confirmAction)),true);

@@ -150,8 +150,14 @@ api.MapPost("/company",(HttpContext ctx,CreateCompanyInput input,AccountService 
 api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,AccountService svc)=>{await svc.Join(UserId(ctx),input.Token);return Results.NoContent();});
 api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses));
 api.MapGet("/gifts",(HttpContext ctx,GiftService svc)=>svc.List(UserId(ctx)));
-api.MapPost("/gifts",(HttpContext ctx,GiftInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
-api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input));
+api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
+api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input));
+api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,HttpContext ctx,GiftService svc)=>{
+ ctx.Response.Headers.CacheControl="private, no-store";
+ ctx.Response.Headers.XContentTypeOptions="nosniff";
+ var photo=await svc.Photo(UserId(ctx),id,version,ctx.RequestAborted);
+ return photo==null?Results.NotFound():Results.File(photo.Data,photo.ContentType);
+});
 api.MapPost("/gifts/{id:guid}/actions",(Guid id,HttpContext ctx,GiftActionInput input,GiftService svc)=>svc.Change(UserId(ctx),id,action:input));
 api.MapPost("/gifts/{id:guid}/archive",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:true));
 api.MapGet("/notices",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);return await db.Notices.Where(x=>x.UserId==id).OrderByDescending(x=>x.Created).Take(100).Select(x=>new NoticeDto(x.Id,x.Text,x.Created,x.Read)).ToArrayAsync();});

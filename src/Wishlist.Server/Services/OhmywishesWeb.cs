@@ -29,9 +29,9 @@ public sealed partial class OhmywishesWeb(HttpClient http)
         return await ReadList(account, link.ListId, shared, ct);
     }
 
-    public async Task<Dictionary<string, GiftInput>> Snapshot(string account, string list, CancellationToken ct, string? shareToken = null)
+    public async Task<Dictionary<string, OhmywishesWish>> Snapshot(string account, string list, CancellationToken ct, string? shareToken = null)
     {
-        var snapshot = new Dictionary<string, GiftInput>(StringComparer.Ordinal);
+        var snapshot = new Dictionary<string, OhmywishesWish>(StringComparer.Ordinal);
         var shared = shareToken != null;
         var reference = shareToken ?? list;
         if (!await ListAvailable(account, list, reference, shared, ct)) return snapshot;

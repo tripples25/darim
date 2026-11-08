@@ -1,0 +1,41 @@
+@implements IAsyncDisposable
+@inject Api Api
+@inject IJSRuntime JS
+
+@if (Gift.PhotoUrl is { } url && !unavailable)
+{
+    <img class="gift-photo" src="@url" alt="@Description" loading="lazy" decoding="async"
+         referrerpolicy="no-referrer" @onerror="()=>unavailable=true" />
+}
+else if (Gift.PhotoVersion != null)
+{
+    <img @ref="image" class="gift-photo" alt="@Description" decoding="async" hidden />
+}
+
+@code {
+    [Parameter, EditorRequired] public GiftDto Gift { get; set; } = default!;
+    private string Description => $"Фото: {Gift.Details.Title}";
+    private ElementReference image;
+    private IJSObjectReference? loader;
+    private bool unavailable, disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Gift.PhotoVersion is not { } version) return;
+        var reference = await Api.WatchGiftPhoto(JS, image, Gift.Id, version);
+        if (disposed) await Release(reference);
+        else loader = reference;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (loader != null) await Release(loader);
+    }
+
+    private static async ValueTask Release(IJSObjectReference reference)
+    {
+        await reference.InvokeVoidAsync("dispose");
+        await reference.DisposeAsync();
+    }
+}

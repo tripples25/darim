@@ -25,7 +25,7 @@ public class OhmywishesTests
     {
         using var visible = JsonDocument.Parse("""{"id":"wish","title":"Книга","visibility":"public","price":{"amount":25,"currency":"USD"},"isFulfilled":false}""");
         using var hidden = JsonDocument.Parse("""{"id":"wish","title":"Книга","visibility":"private","isFulfilled":false}""");
-        Assert.Null(OhmywishesMcp.ReadWish(visible.RootElement)!.Price);
+        Assert.Null(OhmywishesMcp.ReadWish(visible.RootElement)!.Details.Price);
         Assert.Null(OhmywishesMcp.ReadWish(hidden.RootElement));
     }
 
@@ -45,8 +45,8 @@ public class OhmywishesTests
 
         var wishes = await mcp.Snapshot("access", "list", CancellationToken.None);
         Assert.Equal(new[] { 0, 1 }, provider.Offsets);
-        Assert.Equal("Книга", Assert.Single(wishes).Value.Title);
-        Assert.Equal(550m, wishes["wish"].Price);
+        Assert.Equal("Книга", Assert.Single(wishes).Value.Details.Title);
+        Assert.Equal(550m, wishes["wish"].Details.Price);
         Assert.Equal(1, provider.DetailCalls);
 
         provider.FailSecondPage = true;
