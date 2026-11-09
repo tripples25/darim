@@ -103,9 +103,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             var web = gift.OhmywishesKey != null && reservations?.Enabled == true && options?.WebApiEnabled == true
                 ? await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == gift.OwnerId && x.WebApi, ct)
                 : null;
-            if (web != null && action.Action == "split")
-                throw new RuleException("Для этого желания Ohmywishes доступна индивидуальная бронь.");
-            if (web != null && action.Action == "reserve")
+            if (web != null && action.Action is ("reserve" or "split"))
             {
                 reservePath = ReservationPath(gift, web);
                 gift.OhmywishesReservationSource = ReservationProtector().Protect(reservePath);
@@ -222,8 +220,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         if (dto.Participation == null) return dto;
         var synchronized = gift.OhmywishesWebId != null && reservations?.Enabled == true && options?.WebApiEnabled == true;
         if (synchronized && gift.Mode == "free" && gift.OhmywishesOccupied)
-            return dto with { Participation = new("external", false, 0, 0, false, false, null), IndividualOnly = true };
-        if (synchronized) dto = dto with { IndividualOnly = true };
+            return dto with { Participation = new("external", false, 0, 0, false, false, null) };
         if (held || company != null && gift.Mode == "split" && gift.CompanyId != company)
             return dto with { Participation = new("occupied", gift.Bought, 0, 0, false, false, null), Original = null };
         return dto;

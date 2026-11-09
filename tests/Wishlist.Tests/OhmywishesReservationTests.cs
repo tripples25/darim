@@ -64,19 +64,23 @@ public class OhmywishesReservationTests
 [Collection("Postgres")]
 public class OhmywishesReservationPostgresTests(PostgresFixture fixture)
 {
-    [Fact]
-    public async Task ExternalConflictRollsBackLocalReservationAndStatusStaysHiddenFromOwner()
+    [Theory]
+    [InlineData("reserve")]
+    [InlineData("split")]
+    public async Task ExternalConflictRollsBackLocalReservationAndStatusStaysHiddenFromOwner(string action)
     {
         await using var db = new AppDb(fixture.Options);
         var owner = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
-        var donor = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+        var donor = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue), Contact = "@donor" };
+        var partner = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue), Contact = "@partner" };
         var company = new Company { Name = "Пилот", InviteHash = Guid.NewGuid().ToString() };
         var gift = Gift.New(company.Id, owner.Id, new("Книга"));
         gift.OhmywishesKey = Guid.NewGuid().ToString();
         gift.OhmywishesWebId = OhmywishesReservationTests.Id;
-        db.AddRange(owner, donor, company, gift,
+        db.AddRange(owner, donor, partner, company, gift,
             new CompanyMembership { UserId = owner.Id, CompanyId = company.Id },
             new CompanyMembership { UserId = donor.Id, CompanyId = company.Id },
+            new CompanyMembership { UserId = partner.Id, CompanyId = company.Id },
             new OhmywishesConnection { UserId = owner.Id, WebApi = true });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
@@ -92,18 +96,26 @@ public class OhmywishesReservationPostgresTests(PostgresFixture fixture)
         var service = new GiftService(db, options, reservations: new(http, options),
             protection: new EphemeralDataProtectionProvider());
 
-        var error = await Assert.ThrowsAsync<RuleException>(() => service.Change(donor.Id, gift.Id, action: new("reserve")));
+        var error = await Assert.ThrowsAsync<RuleException>(() => service.Change(donor.Id, gift.Id, action: new(action, Slots: action == "split" ? 2 : null)));
         Assert.Equal(409, error.Status);
         Assert.Empty(await service.Giving(donor.Id));
         db.ChangeTracker.Clear();
 
         handler.OccupiedByOther = false;
-        await service.Change(donor.Id, gift.Id, action: new("reserve"));
+        await service.Change(donor.Id, gift.Id, action: new(action, Slots: action == "split" ? 2 : null));
         Assert.True(Assert.Single(await service.Giving(donor.Id)).Participation!.IsMine);
         Assert.Null(Assert.Single(await service.Mine(owner.Id)).Participation);
 
         db.ChangeTracker.Clear();
-        await service.Change(donor.Id, gift.Id, action: new("cancel"));
+        var coordinator = donor.Id;
+        if (action == "split")
+        {
+            await service.Change(partner.Id, gift.Id, action: new("join"));
+            await service.Change(donor.Id, gift.Id, action: new("transfer", UserId: partner.Id));
+            Assert.Single(handler.Writes);
+            coordinator = partner.Id;
+        }
+        await service.Change(coordinator, gift.Id, action: new("cancel"));
         Assert.Empty(await service.Giving(donor.Id));
         Assert.Equal([HttpMethod.Post, HttpMethod.Delete], handler.Writes);
     }
