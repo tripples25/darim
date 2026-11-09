@@ -103,7 +103,7 @@ public class Gift {
  void Snapshot() => OriginalJson=JsonSerializer.Serialize(Details);
  public GiftDto View(Guid viewer, IReadOnlyDictionary<Guid,PersonDto> people) {
   if(viewer==OwnerId)return new(Id,people[OwnerId] with {Contact=null},Details,Archived,null,FromOhmywishes:OhmywishesKey!=null,
-   PhotoUrl:OhmywishesPhotoUrl,PhotoVersion:PhotoVersion,
+   PhotoVersion:PhotoVersion,
    Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()), Unlimited:Unlimited);
   if (Unlimited)
   {
@@ -119,7 +119,7 @@ public class Gift {
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
    Mode=="split" && mine ? Shares.Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null);
   return new(Id,people[OwnerId] with {Contact=null},Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,
-   OhmywishesKey!=null,OhmywishesPhotoUrl,PhotoVersion);
+   OhmywishesKey!=null,PhotoVersion:PhotoVersion);
  }
  static void Require(bool condition,string message,int status=409) {if(!condition)throw new RuleException(message,status);}
  public Guid[] Donors() => Shares.Select(x=>x.UserId).Concat(DonorId is {} d ? [d] : Array.Empty<Guid>()).Distinct().ToArray();

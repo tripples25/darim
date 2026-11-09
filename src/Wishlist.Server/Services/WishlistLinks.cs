@@ -70,7 +70,7 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
                            select user.Name).SingleOrDefaultAsync(ct) ?? throw MissingLink();
         var gifts = await VisibleGifts(link).AsNoTracking().OrderByDescending(x => x.Created).ToArrayAsync(ct);
         var managedOwners = await ManagedWebOwners().Where(id => link.Any(x => x.OwnerId == id)).ToArrayAsync(ct);
-        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, x.OhmywishesPhotoUrl, x.PhotoVersion, !x.Unlimited && (x.OhmywishesKey == null || !managedOwners.Contains(x.OwnerId)))).ToArray());
+        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, null, x.PhotoVersion, !x.Unlimited && (x.OhmywishesKey == null || !managedOwners.Contains(x.OwnerId)))).ToArray());
     }
 
     public async Task<GiftPhoto> Photo(string token, Guid giftId, Guid version, CancellationToken ct)

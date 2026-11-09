@@ -12,7 +12,7 @@ namespace Wishlist.Server.Services;
 
 public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, OhmywishesOAuth oauth,
     OhmywishesMcp mcp, IDataProtectionProvider protection, ILogger<OhmywishesSync> logger, OhmywishesWeb web,
-    DarimMetrics? metrics = null, WishlistLinks? sharing = null)
+    DarimMetrics? metrics = null, WishlistLinks? sharing = null, OhmywishesPhotos? photos = null)
 {
     private readonly IDataProtector tokenProtector = protection.CreateProtector("ohmywishes.tokens.v1");
     private readonly IDataProtector webLinkProtector = protection.CreateProtector("ohmywishes.share-link.v1");
@@ -212,12 +212,14 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                     var snapshot = job.WebApi
                         ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token, job.Access)
                         : await mcp.Snapshot(job.Access!, job.ListId, deadline.Token);
+                    operation = "download-photos";
+                    var downloads = await DownloadPhotos(entry.UserId, job.AccountId, snapshot, deadline.Token);
                     operation = "apply-snapshot";
-                    if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, snapshotStarted, deadline.Token))
+                    if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, downloads, snapshotStarted, deadline.Token))
                     {
                         metrics?.RecordSync(DarimMetrics.SyncOutcome.Applied);
-                        logger.LogInformation("Ohmywishes {Transport} refresh applied for user {UserId}: {WishCount} wishes, {PhotoCount} with photos, in {ElapsedMs:F0} ms.",
-                            transport, entry.UserId, snapshot.Count, snapshot.Values.Count(x => x.PhotoUrl != null),
+                        logger.LogInformation("Ohmywishes {Transport} refresh applied for user {UserId}: {WishCount} wishes, {PhotoCount} photos downloaded, in {ElapsedMs:F0} ms.",
+                            transport, entry.UserId, snapshot.Count, downloads.Count,
                             Stopwatch.GetElapsedTime(started).TotalMilliseconds);
                     }
                     else
@@ -292,7 +294,63 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return job;
     }
 
-    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, OhmywishesWish> snapshot, DateTimeOffset snapshotStarted, CancellationToken ct)
+    private static string WishKey(string accountId, string wishId) =>
+        Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, wishId })));
+
+    private async Task<Dictionary<string, OhmywishesPhotos.ImportedPhoto>> DownloadPhotos(Guid userId, string accountId,
+        Dictionary<string, OhmywishesWish> snapshot, CancellationToken ct)
+    {
+        var downloads = new Dictionary<string, OhmywishesPhotos.ImportedPhoto>();
+        if (photos == null) return downloads;
+
+        var stored = await db.Gifts.AsNoTracking()
+            .Where(g => g.OwnerId == userId && g.OhmywishesKey != null && g.PhotoVersion != null)
+            .ToDictionaryAsync(g => g.OhmywishesKey!, g => g.OhmywishesPhotoUrl, ct);
+        var started = Stopwatch.GetTimestamp();
+        var bytes = 0;
+        foreach (var (id, wish) in snapshot)
+        {
+            if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(20) ||
+                bytes >= 3 * GiftWriteInput.MaxPhotoBytes) break;
+            if (wish.PhotoUrl is not { } url || stored.GetValueOrDefault(WishKey(accountId, id)) == url ||
+                downloads.ContainsKey(url)) continue;
+
+            if (await photos.Download(url, ct) is not { } photo) continue;
+            downloads.Add(url, photo);
+            bytes += photo.Data.Length;
+        }
+        return downloads;
+    }
+
+    private async Task StorePhoto(Gift gift, string? url,
+        IReadOnlyDictionary<string, OhmywishesPhotos.ImportedPhoto> downloads, CancellationToken ct)
+    {
+        if (url == gift.OhmywishesPhotoUrl && (url == null || gift.PhotoVersion != null)) return;
+        OhmywishesPhotos.ImportedPhoto? download = null;
+        if (url != null && !downloads.TryGetValue(url, out download)) return;
+
+        var existing = gift.PhotoVersion == null ? null : await db.GiftPhotos.FindAsync([gift.Id], ct);
+        if (download == null)
+        {
+            if (existing != null) db.GiftPhotos.Remove(existing);
+            gift.PhotoVersion = null;
+        }
+        else
+        {
+            if (existing == null)
+                db.GiftPhotos.Add(new() { GiftId = gift.Id, Data = download.Data, ContentType = download.ContentType });
+            else
+            {
+                existing.Data = download.Data;
+                existing.ContentType = download.ContentType;
+            }
+            gift.PhotoVersion = Guid.NewGuid();
+        }
+        gift.OhmywishesPhotoUrl = url;
+    }
+
+    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, OhmywishesWish> snapshot,
+        Dictionary<string, OhmywishesPhotos.ImportedPhoto> downloads, DateTimeOffset snapshotStarted, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
@@ -300,8 +358,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         if (connection?.Revision != revision ||
             (connection.WebApi ? !options.WebApiEnabled : connection.ProtectedTokens == null)) return false;
 
-        var mapped = snapshot.ToDictionary(item => Convert.ToHexString(
-            SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, item.Key }))), item => item);
+        var mapped = snapshot.ToDictionary(item => WishKey(accountId, item.Key));
         var existing = await LockGifts(userId, ct);
         foreach (var gift in existing)
         {
@@ -321,7 +378,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 gift.Edit(userId, input.Details);
                 Notify(gift, "Желание изменилось в Ohmywishes.");
             }
-            gift.OhmywishesPhotoUrl = input.PhotoUrl;
+            await StorePhoto(gift, input.PhotoUrl, downloads, ct);
             gift.OhmywishesHidden = false;
         }
         var company = connection.DefaultCompanyId;
@@ -333,8 +390,8 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             gift.OhmywishesWebId = connection.WebApi ? item.Value.Key : null;
             gift.OhmywishesOccupied = item.Value.Value.Occupied == true;
             gift.OhmywishesKey = item.Key;
-            gift.OhmywishesPhotoUrl = item.Value.Value.PhotoUrl;
             db.Gifts.Add(gift);
+            await StorePhoto(gift, item.Value.Value.PhotoUrl, downloads, ct);
         }
         connection.LastSuccess = DateTimeOffset.UtcNow;
         connection.NextSync = connection.LastSuccess.Value.Add(options.Interval);
