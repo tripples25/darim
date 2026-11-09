@@ -13,7 +13,7 @@ public record GiftWriteInput(string Title, string? Url = null, decimal? Price = 
     public const int MaxPhotoBytes = 5 * 1024 * 1024;
 }
 public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null,
-    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null);
+    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool IndividualOnly = false);
 public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false);
 public record OhmywishesListDto(string Id, string Title);
 public record OhmywishesSelection(string ListId, Guid? CompanyId = null);

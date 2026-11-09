@@ -66,7 +66,19 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<string>("OhmywishesKey")
                         .HasColumnType("text");
 
+                    b.Property<bool>("OhmywishesOccupied")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("OhmywishesPhotoUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("OhmywishesReservationChanged")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OhmywishesReservationSource")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OhmywishesWebId")
                         .HasColumnType("text");
 
                     b.Property<string>("OriginalJson")

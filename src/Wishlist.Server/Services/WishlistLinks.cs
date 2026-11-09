@@ -69,7 +69,8 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
                            join user in db.Users on active.OwnerId equals user.Id
                            select user.Name).SingleOrDefaultAsync(ct) ?? throw MissingLink();
         var gifts = await VisibleGifts(link).AsNoTracking().OrderByDescending(x => x.Created).ToArrayAsync(ct);
-        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, x.OhmywishesPhotoUrl, x.PhotoVersion)).ToArray());
+        var managedOwners = await ManagedWebOwners().Where(id => link.Any(x => x.OwnerId == id)).ToArrayAsync(ct);
+        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, x.OhmywishesPhotoUrl, x.PhotoVersion, x.OhmywishesKey == null || !managedOwners.Contains(x.OwnerId))).ToArray());
     }
 
     public async Task<GiftPhoto> Photo(string token, Guid giftId, Guid version, CancellationToken ct)
@@ -89,6 +90,8 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
         var gift = await LockGift(giftId, ct) ?? throw MissingLink();
         if (!await VisibleGifts(ActiveLinks().Where(x => x.Id == link.Id)).AnyAsync(x => x.Id == giftId, ct))
             throw MissingLink();
+        if (gift.OhmywishesKey != null && await ManagedWebOwners().ContainsAsync(gift.OwnerId, ct))
+            throw new RuleException("Этот подарок можно забронировать в компании.");
         if (gift.OwnerId == guestId) throw new RuleException("Нельзя выбрать собственный подарок.", 403);
         if (!await db.Users.AnyAsync(x => x.Id == guestId, ct)) throw new RuleException("Войдите снова.", 401);
 
@@ -276,6 +279,12 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
         return ActiveLinks().Where(x => x.TokenHash == hash);
     }
 
+    private IQueryable<Guid> ManagedWebOwners()
+    {
+        var enabled = options?.WebApiEnabled == true && !string.IsNullOrWhiteSpace(options.ReservationToken);
+        return db.OhmywishesConnections.Where(x => enabled && x.WebApi).Select(x => x.UserId);
+    }
+
     private IQueryable<Gift> AvailableForLinks()
     {
         var webEnabled = options?.WebApiEnabled == true;
@@ -289,6 +298,7 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
 
     private async Task<HashSet<Guid>> EligibleLinks(Gift gift, WishlistReservation[] pending, CancellationToken ct)
     {
+        if (gift.OhmywishesKey != null && await ManagedWebOwners().ContainsAsync(gift.OwnerId, ct)) return [];
         if (gift.Archived || gift.OhmywishesHidden || (gift.OhmywishesKey != null && options?.WebApiEnabled != true &&
             await db.OhmywishesConnections.AnyAsync(s => s.UserId == gift.OwnerId && s.WebApi, ct))) return [];
 

@@ -13,6 +13,10 @@ public class Gift {
  public string Mode {get;set;} = "free"; public Guid? DonorId {get;set;} public int Slots {get;set;} public bool Bought {get;set;}
  public string? OriginalJson {get;set;} public DateTimeOffset Created {get;set;} = DateTimeOffset.UtcNow;
  public string? OhmywishesKey {get;set;}
+ public string? OhmywishesWebId {get;set;}
+ public bool OhmywishesOccupied {get;set;}
+ public string? OhmywishesReservationSource {get;set;}
+ public DateTimeOffset? OhmywishesReservationChanged {get;set;}
  public bool OhmywishesHidden {get;set;}
  public string? OhmywishesPhotoUrl {get;set;}
  public Guid? PhotoVersion {get;set;}

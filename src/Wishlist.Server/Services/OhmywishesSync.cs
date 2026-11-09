@@ -208,11 +208,12 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 if (job?.ListId != null)
                 {
                     operation = "read-snapshot";
+                    var snapshotStarted = DateTimeOffset.UtcNow;
                     var snapshot = job.WebApi
                         ? await web.Snapshot(job.AccountId, job.ListId, deadline.Token, job.Access)
                         : await mcp.Snapshot(job.Access!, job.ListId, deadline.Token);
                     operation = "apply-snapshot";
-                    if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, deadline.Token))
+                    if (await Apply(entry.UserId, entry.Revision, job.AccountId, snapshot, snapshotStarted, deadline.Token))
                     {
                         metrics?.RecordSync(DarimMetrics.SyncOutcome.Applied);
                         logger.LogInformation("Ohmywishes {Transport} refresh applied for user {UserId}: {WishCount} wishes, {PhotoCount} with photos, in {ElapsedMs:F0} ms.",
@@ -291,7 +292,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return job;
     }
 
-    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, OhmywishesWish> snapshot, CancellationToken ct)
+    private async Task<bool> Apply(Guid userId, Guid revision, string accountId, Dictionary<string, OhmywishesWish> snapshot, DateTimeOffset snapshotStarted, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var user = await LockCompanyMember(userId, ct);
@@ -300,16 +301,21 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             (connection.WebApi ? !options.WebApiEnabled : connection.ProtectedTokens == null)) return false;
 
         var mapped = snapshot.ToDictionary(item => Convert.ToHexString(
-            SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, item.Key }))), item => item.Value);
+            SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new[] { accountId, item.Key }))), item => item);
         var existing = await LockGifts(userId, ct);
         foreach (var gift in existing)
         {
-            if (!mapped.Remove(gift.OhmywishesKey!, out var input))
+            if (!mapped.Remove(gift.OhmywishesKey!, out var item))
             {
                 Hide(gift);
                 if (sharing != null) await sharing.Reconcile(gift, ct);
                 continue;
             }
+            var input = item.Value;
+            gift.OhmywishesWebId = connection.WebApi ? item.Key : null;
+            if (input.Occupied is { } occupied &&
+                (gift.OhmywishesReservationChanged == null || gift.OhmywishesReservationChanged <= snapshotStarted))
+                gift.OhmywishesOccupied = occupied;
             if (gift.Details != input.Details)
             {
                 gift.Edit(userId, input.Details);
@@ -323,9 +329,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             company = null;
         foreach (var item in mapped)
         {
-            var gift = Gift.New(company, user.Id, item.Value.Details);
+            var gift = Gift.New(company, user.Id, item.Value.Value.Details);
+            gift.OhmywishesWebId = connection.WebApi ? item.Value.Key : null;
+            gift.OhmywishesOccupied = item.Value.Value.Occupied == true;
             gift.OhmywishesKey = item.Key;
-            gift.OhmywishesPhotoUrl = item.Value.PhotoUrl;
+            gift.OhmywishesPhotoUrl = item.Value.Value.PhotoUrl;
             db.Gifts.Add(gift);
         }
         connection.LastSuccess = DateTimeOffset.UtcNow;

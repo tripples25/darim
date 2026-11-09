@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Wishlist.Contracts;
 using Wishlist.Core;
@@ -5,7 +6,8 @@ using Wishlist.Server.Data;
 
 namespace Wishlist.Server.Services;
 
-public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLinks? sharing = null)
+public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLinks? sharing = null,
+    OhmywishesReservations? reservations = null, IDataProtectionProvider? protection = null)
 {
     public async Task<GiftDto[]> List(Guid userId, Guid? companyId = null)
     {
@@ -76,6 +78,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         await db.Entry(gift).Collection(g => g.Publications).LoadAsync(ct);
         var before = gift.Donors();
         Guid? company = null;
+        string? reservePath = null, cancelPath = null;
 
         if (action != null)
         {
@@ -97,6 +100,23 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 await sharing.EnsureAvailable(gift, ct);
             var participants = company == null ? [] : await db.Memberships.Where(x => x.CompanyId == company)
                 .Select(x => x.UserId).ToArrayAsync(ct);
+            var web = gift.OhmywishesKey != null && reservations?.Enabled == true && options?.WebApiEnabled == true
+                ? await db.OhmywishesConnections.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == gift.OwnerId && x.WebApi, ct)
+                : null;
+            if (web != null && action.Action == "split")
+                throw new RuleException("Для этого желания Ohmywishes доступна индивидуальная бронь.");
+            if (web != null && action.Action == "reserve")
+            {
+                reservePath = ReservationPath(gift, web);
+                gift.OhmywishesReservationSource = ReservationProtector().Protect(reservePath);
+                gift.OhmywishesOccupied = true;
+            }
+            if (action.Action == "cancel" && gift.OhmywishesReservationSource is { } source)
+            {
+                cancelPath = Unprotect(ReservationProtector(), source);
+                gift.OhmywishesReservationSource = null;
+                gift.OhmywishesOccupied = false;
+            }
             gift.Act(id, action with { CompanyId = company }, participants.Length - 1,
                 !string.IsNullOrWhiteSpace(user.Contact) || !string.IsNullOrWhiteSpace(user.Username));
         }
@@ -141,8 +161,46 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 db.Notices.Add(new() { UserId = recipient, Text = $"{verb}: «{gift.Title}»." });
         if (sharing != null) await sharing.Reconcile(gift, ct);
         await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
+        // The same remote wish can be imported by different Darim users.
+        if (reservePath != null || cancelPath != null)
+        {
+            var remoteId = (reservePath ?? cancelPath!).Split('/')[^1];
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({remoteId}, 0))", ct);
+        }
+        // Validate and stage all local changes before mutating the provider. Once the
+        // external call starts, a disconnected caller must not interrupt the commit.
+        if (reservePath != null)
+            await reservations!.Reserve(gift.OhmywishesWebId!, CancellationToken.None, reservePath);
+        if (cancelPath != null)
+        {
+            var state = await (reservations ?? throw OhmywishesReservations.Unavailable())
+                .Cancel(cancelPath.Split('/')[^1], CancellationToken.None, cancelPath);
+            gift.OhmywishesOccupied = state.Occupied;
+        }
+        if (reservePath != null || cancelPath != null)
+        {
+            gift.OhmywishesReservationChanged = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        await tx.CommitAsync(reservePath != null || cancelPath != null ? CancellationToken.None : ct);
         return View(gift, id, await People([gift]), company, false);
+    }
+
+    private string ReservationPath(Gift gift, OhmywishesConnection connection)
+    {
+        if (gift.OhmywishesWebId is not { } id) throw OhmywishesReservations.Unavailable();
+        if (connection.ProtectedTokens == null) return $"wishes/{id}";
+        var token = Unprotect(protection!.CreateProtector("ohmywishes.share-link.v1"), connection.ProtectedTokens);
+        return $"users/{connection.AccountId}/wish-lists/{token}/wishes-v2/{id}";
+    }
+
+    private IDataProtector ReservationProtector() => protection!.CreateProtector("ohmywishes.reservation-source.v1");
+
+    private static string Unprotect(IDataProtector protector, string value)
+    {
+        try { return protector.Unprotect(value); }
+        catch (System.Security.Cryptography.CryptographicException) { throw OhmywishesReservations.Unavailable(); }
     }
 
     private async Task UpdateVisibility(Gift gift, GiftVisibility visibility)
@@ -158,10 +216,14 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             gift.Publications.Add(new() { GiftId = gift.Id, CompanyId = company });
     }
 
-    private static GiftDto View(Gift gift, Guid user, IReadOnlyDictionary<Guid, PersonDto> people, Guid? company, bool held)
+    private GiftDto View(Gift gift, Guid user, IReadOnlyDictionary<Guid, PersonDto> people, Guid? company, bool held)
     {
         var dto = gift.View(user, people);
         if (dto.Participation == null) return dto;
+        var synchronized = gift.OhmywishesWebId != null && reservations?.Enabled == true && options?.WebApiEnabled == true;
+        if (synchronized && gift.Mode == "free" && gift.OhmywishesOccupied)
+            return dto with { Participation = new("external", false, 0, 0, false, false, null), IndividualOnly = true };
+        if (synchronized) dto = dto with { IndividualOnly = true };
         if (held || company != null && gift.Mode == "split" && gift.CompanyId != company)
             return dto with { Participation = new("occupied", gift.Bought, 0, 0, false, false, null), Original = null };
         return dto;

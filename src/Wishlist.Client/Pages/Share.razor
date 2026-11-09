@@ -38,7 +38,7 @@
        @if(requests.FirstOrDefault(request=>request.GiftId==gift.Id) is {} request){
         @if(request.Confirmed){<a class="soft-button" href="/?tab=giving">Открыть в «Я дарю»</a>}
         else{<button type="button" class="soft-button" disabled="@busy" @onclick="()=>CancelRequest(request.Id)">Отменить мою заявку</button>}
-       }else{
+       }else if(gift.GuestReservationEnabled){
         <button type="button" class="primary-button" disabled="@busy" @onclick="()=>OpenRequest(gift)">Хочу подарить</button>
        }
       </div>
