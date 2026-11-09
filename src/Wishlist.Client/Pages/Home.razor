@@ -135,7 +135,7 @@ else{
       }
      </div>
     }
-    <footer class="page-footer"><MudIcon Icon="@Icons.Material.Outlined.VisibilityOff" Size="Size.Small" /> Брони на ваши подарки видны всем, кроме вас. Сюрприз останется сюрпризом.</footer>
+    <footer class="page-footer"><MudIcon Icon="@Icons.Material.Outlined.VisibilityOff" Size="Size.Small" /> Брони на ваши желания скрыты от вас.</footer>
    }
   </div>
  </main></div>
@@ -170,6 +170,12 @@ else{
     @if(readingEditPhoto){<small role="status">Читаем фото…</small>}
     @if(editPhotoError is {} photoError){<small class="error-box" role="alert">@photoError</small>}
    </div>
+   @if(selected is null){
+    <label class="guest-consent"><input type="checkbox" @bind="editUnlimited" /> Бесконечное желание</label>
+    <small class="dialog-hint">Каждый даритель сможет забронировать это желание отдельно.</small>
+   }else if(selected.Unlimited){
+    <p class="dialog-hint">Бесконечное желание · каждый даритель бронирует его отдельно.</p>
+   }
    @VisibilityFields
    <details class="editor-extras" open="@(selected != null)">
     <summary>Дополнительные параметры <MudIcon Icon="@Icons.Material.Outlined.ExpandMore" Size="Size.Small" /></summary>

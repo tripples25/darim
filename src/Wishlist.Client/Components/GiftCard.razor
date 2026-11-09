@@ -1,6 +1,6 @@
 <article class="gift-card @(Tall ? "gift-card-tall" : "") @(Gift.Archived ? "archived" : "")" data-gift-id="@Gift.Id">
  <div class="gift-content">
-  <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>} @if(Gift.FromOhmywishes){<span>· Ohmywishes</span>}</div>
+  <div class="gift-eyebrow">@Gift.Details.Occasion @if(Gift.Details.OccasionDate is {} date){<span>· @date.ToString("dd.MM.yyyy")</span>} @if(Gift.FromOhmywishes){<span>· Ohmywishes</span>} @if(Gift.Unlimited){<span>· Бесконечное желание</span>}</div>
   <h3><button type="button" class="gift-title" @onclick='()=>OnAction.InvokeAsync("details")'>@Gift.Details.Title</button></h3>
   @if(HasPhoto){
    <figure class="gift-print">
@@ -30,7 +30,7 @@
    else if(!Gift.Archived && IsOwner){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button><button class="icon-button" aria-label="Отправить в архив" title="Отправить в архив" @onclick='()=>OnAction.InvokeAsync("archive")'><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></button>}
    else if(!Gift.Archived && P?.Mode=="free"){
     <button class="primary-button" @onclick='()=>OnAction.InvokeAsync("reserve")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" Size="Size.Small" /> Подарю сам</button>
-    <button class="soft-button" @onclick='()=>OnAction.InvokeAsync("split")'>Распилить</button>
+    @if(!Gift.Unlimited){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("split")'>Распилить</button>}
    }
    else if(!Gift.Archived && P?.Mode=="split" && !P.IsMine && P.Taken<P.Slots){<button class="primary-button full" @onclick='()=>OnAction.InvokeAsync("join")'>Занять одну долю</button>}
    else if(P?.IsMine==true){<button class="soft-button full" @onclick='()=>OnAction.InvokeAsync("details")'>@(P.Mode=="split"?"Участники и детали":"Детали подарка") <MudIcon Icon="@Icons.Material.Outlined.ArrowForward" Size="Size.Small" /></button>}

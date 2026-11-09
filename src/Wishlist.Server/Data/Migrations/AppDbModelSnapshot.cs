@@ -102,6 +102,9 @@ namespace Wishlist.Server.Data.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
 
+                    b.Property<bool>("Unlimited")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Url")
                         .HasColumnType("text");
 
@@ -144,6 +147,12 @@ namespace Wishlist.Server.Data.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("Bought")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OriginalJson")
+                        .HasColumnType("text");
 
                     b.HasKey("GiftId", "UserId");
 

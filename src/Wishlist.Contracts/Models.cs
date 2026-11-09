@@ -7,13 +7,13 @@ public record GiftInput(string Title, string? Url = null, decimal? Price = null,
 public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null);
 public record GiftWriteInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null,
     string Occasion = "Без повода", DateOnly? OccasionDate = null, byte[]? Photo = null, bool RemovePhoto = false,
-    GiftVisibility? Visibility = null)
+    GiftVisibility? Visibility = null, bool Unlimited = false)
     : GiftInput(Title, Url, Price, Comment, Occasion, OccasionDate)
 {
     public const int MaxPhotoBytes = 5 * 1024 * 1024;
 }
 public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null,
-    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null);
+    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool Unlimited = false);
 public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false);
 public record OhmywishesListDto(string Id, string Title);
 public record OhmywishesSelection(string ListId, Guid? CompanyId = null);

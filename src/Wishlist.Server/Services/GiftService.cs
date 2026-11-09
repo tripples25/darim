@@ -42,6 +42,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         db.Gifts.Add(gift);
         if (input is GiftWriteInput write)
         {
+            gift.Unlimited = write.Unlimited;
             if (write.Visibility != null) await UpdateVisibility(gift, write.Visibility);
             else
             {
@@ -138,7 +139,8 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 if (input is GiftWriteInput write)
                 {
                     await UpdatePhoto(gift, write);
-                    if (write.Visibility != null) await UpdateVisibility(gift, write.Visibility);
+                    gift.Unlimited = write.Unlimited;
+            if (write.Visibility != null) await UpdateVisibility(gift, write.Visibility);
                 }
             }
             if (archive) gift.Archive(id);
@@ -154,7 +156,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             "transfer" => "Координатор распила изменён",
             _ => "Состав распила обновлён"
         };
-        if (input != null || archive || action != null)
+        if (input != null || archive || action != null && !gift.Unlimited)
             foreach (var recipient in recipients)
                 db.Notices.Add(new() { UserId = recipient, Text = $"{verb}: «{gift.Title}»." });
         if (sharing != null) await sharing.Reconcile(gift, ct);

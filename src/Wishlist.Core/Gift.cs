@@ -2,11 +2,18 @@ using System.Text.Json;
 using Wishlist.Contracts;
 namespace Wishlist.Core;
 public class RuleException(string message, int status = 409) : Exception(message) { public int Status { get; } = status; }
-public class GiftShare { public Guid GiftId { get; set; } public Guid UserId { get; set; } }
+public class GiftShare
+{
+ public Guid GiftId { get; set; }
+ public Guid UserId { get; set; }
+ public bool Bought { get; set; }
+ public string? OriginalJson { get; set; }
+}
 public class GiftPublication { public Guid GiftId { get; set; } public Guid CompanyId { get; set; } }
 public class Gift {
  public Guid Id {get;set;} = Guid.NewGuid(); public Guid? CompanyId {get;set;} public Guid OwnerId {get;set;}
  public bool AllCompanies {get;set;}
+ public bool Unlimited {get;set;}
  public List<GiftPublication> Publications {get;set;} = [];
  public string Title {get;set;} = ""; public string? Url {get;set;} public decimal? Price {get;set;} public string? Comment {get;set;}
  public string Occasion {get;set;} = "Без повода"; public DateOnly? OccasionDate {get;set;} public bool Archived {get;set;}
@@ -43,6 +50,11 @@ public class Gift {
  public void Act(Guid userId, GiftActionInput input, int otherMembers, bool hasContact) {
   Require(userId!=OwnerId,"Нельзя выбрать собственный подарок.",403);
   Require(!Archived||input.Action=="cancel","Желание уже в архиве.");Require(!Bought,"Подарок уже куплен.");
+  if (Unlimited)
+  {
+   ActOnUnlimitedGift(userId, input.Action);
+   return;
+  }
   switch(input.Action) {
    case "reserve": Require(Mode=="free","Подарок уже занят.");Snapshot();Mode="solo";DonorId=userId;break;
    case "split":
@@ -67,11 +79,42 @@ public class Gift {
    default: throw new RuleException("Неизвестное действие.",400);
   }
  }
+ private void ActOnUnlimitedGift(Guid userId, string action)
+ {
+  var reservation = Shares.SingleOrDefault(share => share.UserId == userId);
+  switch (action)
+  {
+   case "reserve":
+    Require(reservation == null, "Вы уже забронировали этот подарок.");
+    Shares.Add(new() { GiftId = Id, UserId = userId, OriginalJson = JsonSerializer.Serialize(Details) });
+    break;
+   case "buy":
+   case "cancel":
+    if (reservation == null) throw new RuleException("У вас нет брони на этот подарок.", 403);
+    Require(!reservation.Bought, "Подарок уже куплен.");
+    if (action == "buy") reservation.Bought = true;
+    else Shares.Remove(reservation);
+    break;
+   default:
+    throw new RuleException("Для этого желания доступны отдельные брони.");
+  }
+ }
+
  void Snapshot() => OriginalJson=JsonSerializer.Serialize(Details);
  public GiftDto View(Guid viewer, IReadOnlyDictionary<Guid,PersonDto> people) {
   if(viewer==OwnerId)return new(Id,people[OwnerId] with {Contact=null},Details,Archived,null,FromOhmywishes:OhmywishesKey!=null,
    PhotoUrl:OhmywishesPhotoUrl,PhotoVersion:PhotoVersion,
-   Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()));
+   Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()), Unlimited:Unlimited);
+  if (Unlimited)
+  {
+   var reservation = Shares.SingleOrDefault(share => share.UserId == viewer);
+   var reserved = reservation != null;
+   var participation = new ParticipationDto(reserved ? "solo" : "free", reservation?.Bought == true,
+    0, 0, reserved, reserved, null);
+   var original = reservation?.OriginalJson is { } json ? JsonSerializer.Deserialize<GiftInput>(json) : null;
+   return new(Id, people[OwnerId] with { Contact = null }, Details, Archived, participation, original,
+    PhotoVersion: PhotoVersion, Unlimited: true);
+  }
   var mine=DonorId==viewer || Shares.Any(x=>x.UserId==viewer);
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
    Mode=="split" && mine ? Shares.Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null);
