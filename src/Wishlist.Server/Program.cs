@@ -184,6 +184,29 @@ api.MapGet("/notices",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);retur
 api.MapPost("/notices/read",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);await db.Notices.Where(x=>x.UserId==id&&!x.Read).ExecuteUpdateAsync(s=>s.SetProperty(x=>x.Read,true));return Results.NoContent();});
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync("Cookies");return Results.NoContent();});
 app.MapOpenApi().RequireAuthorization();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "Darim API v1");
+        options.UseRequestInterceptor("""
+            (request) => {
+                const url = new URL(request.url, window.location.href);
+                const method = request.method?.toUpperCase() ?? "GET";
+                if (url.origin === window.location.origin && url.pathname.startsWith("/api/") &&
+                    !["GET", "HEAD", "OPTIONS"].includes(method)) {
+                    return fetch("/api/csrf").then(async (response) => {
+                        if (!response.ok) throw new Error("Войдите в Дарим и обновите Swagger UI.");
+                        const { token } = await response.json();
+                        request.headers["X-CSRF-TOKEN"] = token;
+                        return request;
+                    });
+                }
+                return request;
+            }
+            """);
+    });
+}
 app.MapStaticAssets();
 app.MapFallbackToFile("index.html");
 app.Run();
