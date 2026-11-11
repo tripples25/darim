@@ -170,7 +170,7 @@ api.MapGet("/gifts", (HttpContext ctx, Guid? companyId, GiftService svc, bool in
     svc.List(UserId(ctx), companyId, includeMine));
 api.MapGet("/gifts/mine",(HttpContext ctx,GiftService svc)=>svc.Mine(UserId(ctx)));
 api.MapGet("/gifts/giving",(HttpContext ctx,GiftService svc)=>svc.Giving(UserId(ctx)));
-api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
+api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input,ctx.RequestAborted));
 api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input,ct:ctx.RequestAborted));
 api.MapPut("/gifts/{id:guid}/visibility",(Guid id,HttpContext ctx,GiftVisibility input,GiftService svc)=>svc.Change(UserId(ctx),id,visibility:input,ct:ctx.RequestAborted));
 api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,HttpContext ctx,GiftService svc)=>{
