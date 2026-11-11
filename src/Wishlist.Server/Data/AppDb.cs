@@ -4,6 +4,7 @@ namespace Wishlist.Server.Data;
 public class AppUser {
  public Guid Id {get;set;}=Guid.NewGuid(); public long TelegramId {get;set;} public string Name {get;set;}="";
  public string? Username {get;set;} public string? Contact {get;set;} public Guid? CompanyId {get;set;}
+ public string? TelegramAvatarUrl {get;set;}
  public Guid? OhmywishesAttempt {get;set;}
 }
 public class Company {public Guid Id {get;set;}=Guid.NewGuid();public string Name {get;set;}="";public Guid OrganizerId {get;set;}public string InviteHash {get;set;}="";public int? InviteRemaining {get;set;}}

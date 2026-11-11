@@ -104,7 +104,8 @@ public class Gift {
 
  void Snapshot() => OriginalJson=JsonSerializer.Serialize(Details);
  public GiftDto View(Guid viewer, IReadOnlyDictionary<Guid,PersonDto> people) {
-  if(viewer==OwnerId)return new(Id,people[OwnerId] with {Contact=null},Details,Archived,null,FromOhmywishes:OhmywishesKey!=null,
+  var owner = people[OwnerId] with { Contact = null, AvatarUrl = null };
+  if(viewer==OwnerId)return new(Id,owner,Details,Archived,null,FromOhmywishes:OhmywishesKey!=null,
    PhotoVersion:PhotoVersion,
    Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()), Unlimited:Unlimited);
   if (Unlimited)
@@ -114,13 +115,13 @@ public class Gift {
    var participation = new ParticipationDto(reserved ? "solo" : "free", reservation?.Bought == true,
     0, 0, reserved, reserved, null);
    var original = reservation?.OriginalJson is { } json ? JsonSerializer.Deserialize<GiftInput>(json) : null;
-   return new(Id, people[OwnerId] with { Contact = null }, Details, Archived, participation, original,
+   return new(Id, owner, Details, Archived, participation, original,
     PhotoVersion: PhotoVersion, Unlimited: true);
   }
   var mine=DonorId==viewer || Shares.Any(x=>x.UserId==viewer);
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
    Mode=="split" && mine ? Shares.Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null);
-  return new(Id,people[OwnerId] with {Contact=null},Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,
+  return new(Id,owner,Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,
    OhmywishesKey!=null,PhotoVersion:PhotoVersion);
  }
  static void Require(bool condition,string message,int status=409) {if(!condition)throw new RuleException(message,status);}

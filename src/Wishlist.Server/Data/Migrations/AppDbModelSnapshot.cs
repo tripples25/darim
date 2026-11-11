@@ -187,6 +187,9 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<Guid?>("OhmywishesAttempt")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("TelegramAvatarUrl")
+                        .HasColumnType("text");
+
                     b.Property<long>("TelegramId")
                         .HasColumnType("bigint");
 

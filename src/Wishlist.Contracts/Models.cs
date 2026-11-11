@@ -1,5 +1,5 @@
 namespace Wishlist.Contracts;
-public record PersonDto(Guid Id, string Name, string? Contact = null);
+public record PersonDto(Guid Id, string Name, string? Contact = null, string? AvatarUrl = null);
 public record CompanyDto(Guid Id, string Name, bool IsOrganizer, PersonDto[] Members);
 public record MeDto(PersonDto User, CompanyDto? Company, CompanyDto[]? Companies = null);
 public record GiftVisibility(bool AllCompanies, Guid[] CompanyIds);

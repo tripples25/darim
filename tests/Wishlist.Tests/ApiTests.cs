@@ -359,6 +359,29 @@ public class ApiTests(PostgresFixture db) {
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}
+ [Fact] public async Task TelegramAvatarIsSavedAndExposedOnlyToSplitParticipants(){
+  const string avatar="https://cdn4.telesco.pe/file/avatar.jpg";
+  var s=await Seed();
+  await using(var ctx=new AppDb(db.Options)){
+   var identity=AuthSetup.IdentityFromClaims(new ClaimsPrincipal(new ClaimsIdentity(
+    [new("id",s.donor.TelegramId.ToString()),new("name",s.donor.Name),new("picture",avatar)])));
+   await new AccountService(ctx).Login(identity);
+   var member=new AppUser{Name="Зритель",CompanyId=s.owner.CompanyId,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};
+   ctx.Users.Add(member);
+   ctx.Memberships.Add(new(){UserId=member.Id,CompanyId=s.owner.CompanyId!.Value});
+   await ctx.SaveChangesAsync();
+   using var app=Factory();
+   using var client=app.CreateClient();
+   Bearer(client,s.donor);
+   using var response=await client.PostAsJsonAsync($"/api/gifts/{s.gift}/actions",new GiftActionInput("split",2));
+   response.EnsureSuccessStatusCode();
+   var created=await response.Content.ReadFromJsonAsync<GiftDto>();
+   Assert.Equal(avatar,Assert.Single(created!.Participation!.Participants!).AvatarUrl);
+   Bearer(client,member);
+   var visible=(await client.GetFromJsonAsync<GiftDto[]>("/api/gifts"))!.Single(gift=>gift.Id==s.gift);
+   Assert.Null(visible.Participation!.Participants);
+  }
+ }
  [Theory][InlineData("0")][InlineData("-1")][InlineData("invalid")] public void BrowserRejectsInvalidTelegramId(string id){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234"),new("id",id)]));Assert.Throws<Wishlist.Core.RuleException>(()=>AuthSetup.IdentityFromClaims(claims));}
  [Fact] public async Task AnonymousCannotReadWishlist(){using var app=Factory();using var client=app.CreateClient();Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/gifts")).StatusCode);}
  [Fact] public async Task BearerMutationReturnsOwnerSafeView(){var s=await Seed();using var app=Factory();using var client=app.CreateClient();Bearer(client,s.donor);Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync($"/api/gifts/{s.gift}/actions",new GiftActionInput("reserve"))).StatusCode);Bearer(client,s.owner);var dto=(await client.GetFromJsonAsync<GiftDto[]>("/api/gifts"))!.Single(x=>x.Id==s.gift);Assert.Null(dto.Participation);Assert.Null(dto.Original);}
