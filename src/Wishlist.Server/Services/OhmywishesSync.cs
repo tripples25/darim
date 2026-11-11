@@ -313,7 +313,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         foreach (var (id, wish) in snapshot)
         {
             if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(20) ||
-                bytes >= 3 * GiftWriteInput.MaxPhotoBytes) break;
+                bytes >= 3 * OhmywishesPhotos.MaxDownloadBytes) break;
             var gift = stored.GetValueOrDefault(WishKey(accountId, id));
             if (wish.PhotoUrl is not { } url || gift?.OhmywishesPhotoEdited == true || gift?.OhmywishesPhotoUrl == url ||
                 downloads.ContainsKey(url)) continue;

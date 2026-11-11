@@ -36,7 +36,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         return gifts.Select(g => View(g, userId, people, company, held.Contains(g.Id))).ToArray();
     }
 
-    public async Task<GiftDto> Create(Guid id, GiftInput input)
+    public async Task<GiftDto> Create(Guid id, GiftInput input, CancellationToken ct = default)
     {
         await User(id);
         var gift = Gift.New(null, id, input);
@@ -50,7 +50,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 var memberships = await db.Memberships.Where(x => x.UserId == id).Select(x => x.CompanyId).Take(2).ToArrayAsync();
                 if (memberships.Length == 1) await UpdateVisibility(gift, new(false, memberships));
             }
-            await UpdatePhoto(gift, write);
+            await UpdatePhoto(gift, write, ct);
         }
         await db.SaveChangesAsync();
         return gift.View(id, await People([gift]));
@@ -144,7 +144,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 {
                     if (gift.OhmywishesKey != null && write.Unlimited)
                         throw new RuleException("Для импортированного желания нельзя включить отдельные брони.", 400);
-                    await UpdatePhoto(gift, write);
+                    await UpdatePhoto(gift, write, ct);
                     if (gift.OhmywishesKey != null && (write.Photo != null || write.RemovePhoto))
                         gift.OhmywishesPhotoEdited = true;
                     gift.Unlimited = write.Unlimited;
@@ -236,20 +236,18 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         return dto;
     }
 
- async Task UpdatePhoto(Gift gift,GiftWriteInput input) {
+ async Task UpdatePhoto(Gift gift,GiftWriteInput input,CancellationToken ct) {
   if(input.Photo==null && !input.RemovePhoto)return;
   if(input.RemovePhoto){
    if(input.Photo!=null)throw new RuleException("Выберите замену или удаление фотографии.",400);
    if(gift.PhotoVersion==null)return;
-   var existing=await db.GiftPhotos.FindAsync(gift.Id);
+   var existing=await db.GiftPhotos.FindAsync([gift.Id],ct);
    if(existing!=null)db.GiftPhotos.Remove(existing);
    gift.PhotoVersion=null;
    return;
   }
-  var data=input.Photo!;
-  if(data.Length>GiftWriteInput.MaxPhotoBytes)throw new RuleException("Фото должно занимать не больше 5 МБ.",400);
-  var type=GiftPhotoFormat.ContentType(data)??throw new RuleException("Выберите фото в формате JPEG, PNG или WebP.",400);
-  var photo=gift.PhotoVersion==null?null:await db.GiftPhotos.FindAsync(gift.Id);
+  var (data,type)=await GiftPhotoOptimizer.Optimize(input.Photo!,ct);
+  var photo=gift.PhotoVersion==null?null:await db.GiftPhotos.FindAsync([gift.Id],ct);
   if(photo==null)db.GiftPhotos.Add(new(){GiftId=gift.Id,Data=data,ContentType=type});
   else{photo.Data=data;photo.ContentType=type;}
   gift.PhotoVersion=Guid.NewGuid();

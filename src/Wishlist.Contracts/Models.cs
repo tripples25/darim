@@ -10,7 +10,8 @@ public record GiftWriteInput(string Title, string? Url = null, decimal? Price = 
     GiftVisibility? Visibility = null, bool Unlimited = false)
     : GiftInput(Title, Url, Price, Comment, Occasion, OccasionDate)
 {
-    public const int MaxPhotoBytes = 5 * 1024 * 1024;
+    public const int MaxPhotoMegabytes = 15;
+    public const int MaxPhotoBytes = MaxPhotoMegabytes * 1024 * 1024;
 }
 public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null,
     bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool Unlimited = false);

@@ -4,6 +4,8 @@ namespace Wishlist.Server.Services;
 
 public sealed class OhmywishesPhotos(HttpClient http, ILogger<OhmywishesPhotos>? logger = null)
 {
+    internal const int MaxDownloadBytes = 5 * 1024 * 1024;
+
     public async Task<ImportedPhoto?> Download(string url, CancellationToken ct)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
@@ -15,7 +17,7 @@ public sealed class OhmywishesPhotos(HttpClient http, ILogger<OhmywishesPhotos>?
         try
         {
             using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-            var max = GiftWriteInput.MaxPhotoBytes;
+            var max = MaxDownloadBytes;
             if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > max)
                 return null;
 
