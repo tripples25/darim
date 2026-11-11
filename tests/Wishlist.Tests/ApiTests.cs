@@ -87,6 +87,29 @@ public class ApiTests(PostgresFixture db) {
  }
 
  [Fact]
+ public async Task CompanyFeedCanExcludeCurrentUsersWishes()
+ {
+  var seed = await Seed();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, seed.donor);
+  var otherGift = await CreateGift(client, "Желание другого участника", true);
+  Bearer(client, seed.owner);
+
+  var feed = $"/api/gifts?companyId={seed.owner.CompanyId}";
+  foreach (var path in new[] { feed, $"{feed}&includeMine=true" })
+  {
+   var all = (await client.GetFromJsonAsync<GiftDto[]>(path))!;
+   Assert.Equal(new[] { seed.gift, otherGift.Id }.Order(), all.Select(gift => gift.Id).Order());
+  }
+
+  var filtered = (await client.GetFromJsonAsync<GiftDto[]>($"{feed}&includeMine=false"))!;
+  Assert.Equal(otherGift.Id, Assert.Single(filtered).Id);
+  var mine = (await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/mine"))!;
+  Assert.Equal(seed.gift, Assert.Single(mine).Id);
+ }
+
+ [Fact]
  public async Task GiftPublishedInTwoCompaniesHasOneReservationWinner()
  {
   var first = await Seed();
