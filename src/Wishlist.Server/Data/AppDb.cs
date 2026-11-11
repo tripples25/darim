@@ -20,6 +20,7 @@ public class AppDb(DbContextOptions<AppDb> options):DbContext(options) {
  public DbSet<GiftShare> Shares=>Set<GiftShare>();public DbSet<Notice> Notices=>Set<Notice>();
  public DbSet<OhmywishesConnection> OhmywishesConnections=>Set<OhmywishesConnection>();
  public DbSet<GiftPhoto> GiftPhotos=>Set<GiftPhoto>();
+ public DbSet<CardArtwork> CardArtwork=>Set<CardArtwork>();
  public DbSet<CompanyMembership> Memberships=>Set<CompanyMembership>();
  public DbSet<GiftPublication> GiftPublications=>Set<GiftPublication>();
  protected override void OnModelCreating(ModelBuilder b) {
@@ -37,6 +38,12 @@ public class AppDb(DbContextOptions<AppDb> options):DbContext(options) {
   b.Entity<Gift>().HasIndex(x=>new{x.CompanyId,x.OwnerId});b.Entity<Gift>().HasOne<Company>().WithMany().HasForeignKey(x=>x.CompanyId).OnDelete(DeleteBehavior.Restrict);
   b.Entity<Gift>().HasIndex(x=>new{x.OwnerId,x.OhmywishesKey}).IsUnique();
   b.Entity<GiftPhoto>().HasKey(x=>x.GiftId);
+  b.Entity<CardArtwork>().Property(x=>x.Category).HasMaxLength(7);
+  b.Entity<CardArtwork>().Property(x=>x.BuiltIn).HasMaxLength(32);
+  b.Entity<CardArtwork>().ToTable(t=>{
+   t.HasCheckConstraint("CK_CardArtwork_Category","\"Category\" IN ('light','dark','overlay')");
+   t.HasCheckConstraint("CK_CardArtwork_Source","(\"BuiltIn\" IS NULL) <> (\"Data\" IS NULL)");
+  });
   b.Entity<GiftPhoto>().HasOne<Gift>().WithOne().HasForeignKey<GiftPhoto>(x=>x.GiftId).OnDelete(DeleteBehavior.Cascade);
   b.Entity<OhmywishesConnection>().HasKey(x=>x.UserId);
   b.Entity<OhmywishesConnection>().HasOne<AppUser>().WithOne().HasForeignKey<OhmywishesConnection>(x=>x.UserId).OnDelete(DeleteBehavior.Cascade);

@@ -120,6 +120,7 @@ if(demo)app.MapPost("/auth/demo/{index:int}",async(int index,HttpContext ctx,App
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method is not("GET" or "HEAD" or "OPTIONS")&&!ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase))await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 app.MapWishlistSharing(api);
+api.MapCardArtwork();
 static Guid UserId(HttpContext ctx)=>Guid.TryParse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier),out var id)?id:throw new RuleException("Войдите снова.",401);
 app.MapGet(OhmywishesOptions.CallbackPath,async(HttpContext ctx,OhmywishesOAuth oauth,OhmywishesSync sync)=>{
  ctx.Response.Headers["Referrer-Policy"]="no-referrer";
