@@ -26,7 +26,7 @@
   else if(P?.Mode=="external"){<div class="state-line">Занято в Ohmywishes</div>}
   else if(P?.Mode=="occupied"){<div class="state-line"><MudIcon Icon="@Icons.Material.Outlined.Lock" Size="Size.Small" /> Кто-то уже дарит</div>}
   <div class="card-actions">
-   @if(!Gift.Archived && IsOwner && Gift.FromOhmywishes){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("visibility")'>Видимость</button><span class="quiet-note">Остальное в Ohmywishes</span>}
+   @if(!Gift.Archived && IsOwner && Gift.FromOhmywishes){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button>}
    else if(!Gift.Archived && IsOwner){<button class="soft-button" @onclick='()=>OnAction.InvokeAsync("edit")'>Редактировать</button><button class="icon-button" aria-label="Отправить в архив" title="Отправить в архив" @onclick='()=>OnAction.InvokeAsync("archive")'><MudIcon Icon="@Icons.Material.Outlined.Inventory2" Size="Size.Small" /></button>}
    else if(!Gift.Archived && P?.Mode=="free"){
     <button class="primary-button" @onclick='()=>OnAction.InvokeAsync("reserve")'><MudIcon Icon="@Icons.Material.Outlined.Redeem" Size="Size.Small" /> Подарю сам</button>

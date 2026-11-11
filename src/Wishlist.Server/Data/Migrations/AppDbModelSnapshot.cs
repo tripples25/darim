@@ -60,6 +60,9 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<DateOnly?>("OccasionDate")
                         .HasColumnType("date");
 
+                    b.Property<bool>("OhmywishesDetailsEdited")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("OhmywishesHidden")
                         .HasColumnType("boolean");
 
@@ -67,6 +70,9 @@ namespace Wishlist.Server.Data.Migrations
                         .HasColumnType("text");
 
                     b.Property<bool>("OhmywishesOccupied")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("OhmywishesPhotoEdited")
                         .HasColumnType("boolean");
 
                     b.Property<string>("OhmywishesPhotoUrl")

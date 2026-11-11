@@ -10,12 +10,12 @@ public class ComponentTests:BunitContext {
  [Fact] public void FreeGiftOffersBothModes(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("free",false,0,0,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.Contains("Подарю сам",card.Markup);Assert.Contains("Распилить",card.Markup);}
  [Fact] public void FullSplitDoesNotOfferJoin(){var g=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,new("split",false,2,2,false,false,null));var card=Render<GiftCard>(p=>p.Add(x=>x.Gift,g));Assert.DoesNotContain("Занять одну долю",card.Markup);Assert.Contains("Занято 2 из 2",card.Markup);}
  [Fact]
- public void ImportedGiftShowsItsSourceAndOnlyOffersActionsToDonors()
+ public void ImportedGiftOffersEditingToOwnerAndReservationToDonor()
  {
   var gift=new GiftDto(Guid.NewGuid(),new(Guid.NewGuid(),"Юлия"),new("Книга"),false,null,FromOhmywishes:true);
   var owner=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift).Add(x=>x.IsOwner,true));
-  Assert.Contains("Остальное в Ohmywishes",owner.Markup);
-  Assert.Equal("Видимость",Assert.Single(owner.FindAll(".card-actions button")).TextContent.Trim());
+  Assert.Contains("Ohmywishes",owner.Markup);
+  Assert.Equal("Редактировать",Assert.Single(owner.FindAll(".card-actions button")).TextContent.Trim());
   Assert.Single(owner.FindAll("button.gift-title"));
   var donor=Render<GiftCard>(p=>p.Add(x=>x.Gift,gift with { Participation=new("free",false,0,0,false,false,null) }));
   Assert.Contains("Ohmywishes",donor.Markup);

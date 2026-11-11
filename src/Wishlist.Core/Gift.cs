@@ -25,6 +25,8 @@ public class Gift {
  public string? OhmywishesReservationSource {get;set;}
  public DateTimeOffset? OhmywishesReservationChanged {get;set;}
  public bool OhmywishesHidden {get;set;}
+ public bool OhmywishesDetailsEdited {get;set;}
+ public bool OhmywishesPhotoEdited {get;set;}
  public string? OhmywishesPhotoUrl {get;set;}
  public Guid? PhotoVersion {get;set;}
  public List<GiftShare> Shares {get;set;} = [];
