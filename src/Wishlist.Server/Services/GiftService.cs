@@ -9,12 +9,13 @@ namespace Wishlist.Server.Services;
 public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLinks? sharing = null,
     OhmywishesReservations? reservations = null, IDataProtectionProvider? protection = null)
 {
-    public async Task<GiftDto[]> List(Guid userId, Guid? companyId = null)
+    public async Task<GiftDto[]> List(Guid userId, Guid? companyId = null, bool includeMine = true)
     {
         await User(userId);
         var company = await new AccountService(db).ResolveCompany(userId, companyId);
         var memberships = db.Memberships.Where(x => x.CompanyId == company);
         return await Read(userId, VisibleGifts().Where(g =>
+            (includeMine || g.OwnerId != userId) &&
             memberships.Any(m => m.UserId == g.OwnerId) &&
             (g.AllCompanies || g.Publications.Any(p => p.CompanyId == company)) &&
             (!g.Archived || g.OwnerId == userId || g.DonorId == userId || g.Shares.Any(s => s.UserId == userId))), company);

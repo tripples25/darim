@@ -166,7 +166,8 @@ api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,bool? r
  return returnCompany==true?Results.Ok(new CompanyJoinDto(id)):Results.NoContent();
 });
 api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses,input?.CompanyId));
-api.MapGet("/gifts",(HttpContext ctx,Guid? companyId,GiftService svc)=>svc.List(UserId(ctx),companyId));
+api.MapGet("/gifts", (HttpContext ctx, Guid? companyId, GiftService svc, bool includeMine = true) =>
+    svc.List(UserId(ctx), companyId, includeMine));
 api.MapGet("/gifts/mine",(HttpContext ctx,GiftService svc)=>svc.Mine(UserId(ctx)));
 api.MapGet("/gifts/giving",(HttpContext ctx,GiftService svc)=>svc.Giving(UserId(ctx)));
 api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
