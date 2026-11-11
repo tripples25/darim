@@ -203,6 +203,24 @@ namespace Wishlist.Server.Data.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Wishlist.Server.Data.CardArtwork", b =>
+                {
+                    b.Property<string>("Slot")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<Guid>("Version")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Slot");
+
+                    b.ToTable("CardArtwork");
+                });
+
             modelBuilder.Entity("Wishlist.Server.Data.Company", b =>
                 {
                     b.Property<Guid>("Id")
