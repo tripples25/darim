@@ -205,20 +205,30 @@ namespace Wishlist.Server.Data.Migrations
 
             modelBuilder.Entity("Wishlist.Server.Data.CardArtwork", b =>
                 {
-                    b.Property<string>("Slot")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BuiltIn")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<byte[]>("Data")
+                    b.Property<string>("Category")
                         .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)");
+
+                    b.Property<byte[]>("Data")
                         .HasColumnType("bytea");
 
-                    b.Property<Guid>("Version")
-                        .HasColumnType("uuid");
+                    b.HasKey("Id");
 
-                    b.HasKey("Slot");
+                    b.ToTable("CardArtwork", t =>
+                        {
+                            t.HasCheckConstraint("CK_CardArtwork_Category", "\"Category\" IN ('light','dark','overlay')");
 
-                    b.ToTable("CardArtwork");
+                            t.HasCheckConstraint("CK_CardArtwork_Source", "(\"BuiltIn\" IS NULL) <> (\"Data\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Wishlist.Server.Data.Company", b =>

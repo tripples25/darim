@@ -38,8 +38,12 @@ public class AppDb(DbContextOptions<AppDb> options):DbContext(options) {
   b.Entity<Gift>().HasIndex(x=>new{x.CompanyId,x.OwnerId});b.Entity<Gift>().HasOne<Company>().WithMany().HasForeignKey(x=>x.CompanyId).OnDelete(DeleteBehavior.Restrict);
   b.Entity<Gift>().HasIndex(x=>new{x.OwnerId,x.OhmywishesKey}).IsUnique();
   b.Entity<GiftPhoto>().HasKey(x=>x.GiftId);
-  b.Entity<CardArtwork>().HasKey(x=>x.Slot);
-  b.Entity<CardArtwork>().Property(x=>x.Slot).HasMaxLength(32);
+  b.Entity<CardArtwork>().Property(x=>x.Category).HasMaxLength(7);
+  b.Entity<CardArtwork>().Property(x=>x.BuiltIn).HasMaxLength(32);
+  b.Entity<CardArtwork>().ToTable(t=>{
+   t.HasCheckConstraint("CK_CardArtwork_Category","\"Category\" IN ('light','dark','overlay')");
+   t.HasCheckConstraint("CK_CardArtwork_Source","(\"BuiltIn\" IS NULL) <> (\"Data\" IS NULL)");
+  });
   b.Entity<GiftPhoto>().HasOne<Gift>().WithOne().HasForeignKey<GiftPhoto>(x=>x.GiftId).OnDelete(DeleteBehavior.Cascade);
   b.Entity<OhmywishesConnection>().HasKey(x=>x.UserId);
   b.Entity<OhmywishesConnection>().HasOne<AppUser>().WithOne().HasForeignKey<OhmywishesConnection>(x=>x.UserId).OnDelete(DeleteBehavior.Cascade);

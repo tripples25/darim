@@ -12,30 +12,26 @@ internal static class CardArtworkEndpoints
     private const int MaxBytes = 5 * 1024 * 1024;
     private const int MaxPixels = 4096 * 4096;
     private static readonly SemaphoreSlim DecodeSlot = new(1);
-    private static readonly HashSet<string> Slots = new(StringComparer.Ordinal)
-    {
-        "background-light", "background-light-1", "background-light-2", "background-light-3",
-        "background-dark", "background-dark-1", "background-dark-2", "background-dark-3",
-        "overlay-1", "overlay-2", "overlay-3", "overlay-4",
-    };
 
     public static void MapCardArtwork(this RouteGroupBuilder api)
     {
         var artwork = api.MapGroup("/card-artwork");
         artwork.MapGet("", Manifest);
-        artwork.MapGet("/{slot}/{version:guid}.png", Image);
-        artwork.MapPut("/{slot}", Replace).Accepts<byte[]>("image/png");
+        artwork.MapGet("/{id:guid}.png", Image);
+        artwork.MapPost("/{category}", Upload).Accepts<byte[]>("image/png");
+        artwork.MapDelete("/{id:guid}", Remove);
     }
 
     private static async Task<object> Manifest(HttpContext context, AppDb db, CancellationToken ct)
     {
-        var versions = await db.CardArtwork.AsNoTracking().ToDictionaryAsync(x => x.Slot, x => x.Version, ct);
-        return new { versions, canManage = await CanManage(context, db, ct) };
+        var images = await db.CardArtwork.OrderBy(image => image.Id)
+            .Select(image => new { image.Id, image.Category, image.BuiltIn }).ToArrayAsync(ct);
+        return new { images, canManage = await CanManage(context, db, ct) };
     }
 
-    private static async Task<IResult> Image(string slot, Guid version, HttpContext context, AppDb db, CancellationToken ct)
+    private static async Task<IResult> Image(Guid id, HttpContext context, AppDb db, CancellationToken ct)
     {
-        var data = await db.CardArtwork.Where(x => x.Slot == slot && x.Version == version)
+        var data = await db.CardArtwork.Where(x => x.Id == id)
             .Select(x => x.Data).SingleOrDefaultAsync(ct);
         if (data is null)
             return Results.NotFound();
@@ -44,11 +40,11 @@ internal static class CardArtworkEndpoints
         return Results.File(data, "image/png");
     }
 
-    private static async Task<IResult> Replace(string slot, HttpContext context, AppDb db, CancellationToken ct)
+    private static async Task<IResult> Upload(string category, HttpContext context, AppDb db, CancellationToken ct)
     {
         if (!await CanManage(context, db, ct))
             return Results.Forbid();
-        if (!Slots.Contains(slot))
+        if (category is not ("light" or "dark" or "overlay"))
             return Results.NotFound();
 
         var original = await ReadPng(context.Request, ct);
@@ -63,12 +59,19 @@ internal static class CardArtworkEndpoints
             DecodeSlot.Release();
         }
 
-        var version = Guid.NewGuid();
-        await db.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO "CardArtwork" ("Slot", "Version", "Data") VALUES ({slot}, {version}, {data})
-            ON CONFLICT ("Slot") DO UPDATE SET "Version" = EXCLUDED."Version", "Data" = EXCLUDED."Data"
-            """, ct);
-        return Results.Ok(new { version, bytes = data.Length });
+        var image = new CardArtwork { Id = Guid.NewGuid(), Category = category, Data = data };
+        db.CardArtwork.Add(image);
+        await db.SaveChangesAsync(ct);
+        return Results.Created($"/api/card-artwork/{image.Id}.png", new { image.Id, image.Category, bytes = data.Length });
+    }
+
+    private static async Task<IResult> Remove(Guid id, HttpContext context, AppDb db, CancellationToken ct)
+    {
+        if (!await CanManage(context, db, ct))
+            return Results.Forbid();
+
+        await db.CardArtwork.Where(image => image.Id == id).ExecuteDeleteAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<bool> CanManage(HttpContext context, AppDb db, CancellationToken ct)

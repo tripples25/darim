@@ -2,7 +2,8 @@ namespace Wishlist.Server.Data;
 
 public sealed class CardArtwork
 {
-    public required string Slot { get; init; }
-    public Guid Version { get; init; }
-    public required byte[] Data { get; init; }
+    public Guid Id { get; init; }
+    public required string Category { get; init; }
+    public string? BuiltIn { get; init; }
+    public byte[]? Data { get; init; }
 }
