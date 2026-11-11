@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SkiaSharp;
 using Wishlist.Contracts;
 using Wishlist.Server.Data;
 using Wishlist.Server.Services;
@@ -326,9 +327,9 @@ public class ApiTests(PostgresFixture db) {
   Bearer(client,seed.donor);
   using var photo=await client.GetAsync(photoPath);
   photo.EnsureSuccessStatusCode();
-  Assert.Equal("image/png",photo.Content.Headers.ContentType!.MediaType);
   Assert.True(photo.Headers.CacheControl!.NoStore);
-  Assert.Equal(png,await photo.Content.ReadAsByteArrayAsync());
+  using var smallPhoto=SKBitmap.Decode(await photo.Content.ReadAsByteArrayAsync());
+  Assert.Equal(new SKSizeI(1,1),new SKSizeI(smallPhoto.Width,smallPhoto.Height));
   Assert.Equal(HttpStatusCode.Forbidden,(await client.PutAsJsonAsync(giftPath,
    new GiftWriteInput("Книга",RemovePhoto:true))).StatusCode);
   client.DefaultRequestHeaders.Authorization=null;
@@ -354,6 +355,75 @@ public class ApiTests(PostgresFixture db) {
   (await client.PostAsync($"{giftPath}/archive",null)).EnsureSuccessStatusCode();
   Bearer(client,seed.donor);
   Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"{giftPath}/photo/{restoredVersion}")).StatusCode);
+ }
+
+ [Fact]
+ public async Task LargeUploadIsStoredSmallerWithProportionsAndTransparencyIntact()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  app.UseKestrel(options => options.Listen(IPAddress.Loopback,0));
+  using var client=app.CreateClient();
+  Bearer(client,seed.owner);
+
+  using var source=new SKBitmap(2400,1600);
+  using (var canvas=new SKCanvas(source))
+  using (var paint=new SKPaint { Color=SKColors.Red })
+  {
+   canvas.Clear(SKColors.Transparent);
+   canvas.DrawRect(0,0,1200,1600,paint);
+  }
+  using var pixels=source.PeekPixels();
+  using var png=pixels.Encode(new SKPngEncoderOptions(SKPngEncoderFilterFlags.NoFilters,0));
+  Assert.NotNull(png);
+  Assert.InRange(png.Size,14*1024*1024,15*1024*1024);
+
+  using var created=await client.PostAsJsonAsync("/api/gifts",new GiftWriteInput("Фото",Photo:png.ToArray()));
+  created.EnsureSuccessStatusCode();
+  var gift=(await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  using var response=await client.GetAsync($"/api/gifts/{gift.Id}/photo/{gift.PhotoVersion}");
+  response.EnsureSuccessStatusCode();
+  Assert.Equal("image/webp",response.Content.Headers.ContentType!.MediaType);
+  var saved=await response.Content.ReadAsByteArrayAsync();
+  Assert.True(saved.Length < png.Size / 10);
+  using var result=SKBitmap.Decode(saved);
+  Assert.Equal(1600,result.Width);
+  Assert.Equal(1067,result.Height);
+  Assert.Equal(SKColors.Red,result.GetPixel(100,100));
+  Assert.Equal(0,result.GetPixel(1500,100).Alpha);
+
+  var oversized=new byte[15*1024*1024+1];
+  using var rejected=await client.PutAsJsonAsync($"/api/gifts/{gift.Id}",new GiftWriteInput("Фото",Photo:oversized));
+  Assert.Equal(HttpStatusCode.BadRequest,rejected.StatusCode);
+  Assert.Contains("15 МБ",(await rejected.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>())!.Title);
+ }
+
+ [Fact]
+ public async Task ResizedJpegKeepsItsExifOrientation()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  using var client=app.CreateClient();
+  Bearer(client,seed.owner);
+  using var source=new SKBitmap(2400,1200,true);
+  using (var canvas=new SKCanvas(source))
+  using (var paint=new SKPaint { Color=SKColors.Red })
+  {
+   canvas.Clear(SKColors.Blue);
+   canvas.DrawRect(0,0,1200,1200,paint);
+  }
+  using var jpeg=source.Encode(SKEncodedImageFormat.Jpeg,95);
+  var bytes=jpeg.ToArray();
+  // APP1 EXIF tag 0x0112 with value 6: rotate 90 degrees clockwise.
+  var exif=Convert.FromHexString("FFE1002245786966000049492A0008000000010012010300010000000600000000000000");
+  using var created=await client.PostAsJsonAsync("/api/gifts",new GiftWriteInput("Портрет",Photo:[.. bytes[..2], .. exif, .. bytes[2..]]));
+  created.EnsureSuccessStatusCode();
+  var gift=(await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  using var result=SKBitmap.Decode(await client.GetByteArrayAsync($"/api/gifts/{gift.Id}/photo/{gift.PhotoVersion}"));
+  Assert.Equal(800,result.Width);
+  Assert.Equal(1600,result.Height);
+  Assert.True(result.GetPixel(400,200).Red > 240);
+  Assert.True(result.GetPixel(400,1400).Blue > 240);
  }
  WebApplicationFactory<Program> Factory(string environment="Testing")=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}

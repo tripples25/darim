@@ -206,6 +206,34 @@ namespace Wishlist.Server.Data.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Wishlist.Server.Data.CardArtwork", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BuiltIn")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)");
+
+                    b.Property<byte[]>("Data")
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CardArtwork", t =>
+                        {
+                            t.HasCheckConstraint("CK_CardArtwork_Category", "\"Category\" IN ('light','dark','overlay')");
+
+                            t.HasCheckConstraint("CK_CardArtwork_Source", "(\"BuiltIn\" IS NULL) <> (\"Data\" IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Wishlist.Server.Data.Company", b =>
                 {
                     b.Property<Guid>("Id")

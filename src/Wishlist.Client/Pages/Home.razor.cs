@@ -173,7 +173,7 @@ public partial class Home {
   readingEditPhoto=true;editPhotoError=null;
   try{
    if(args.File.Size>GiftWriteInput.MaxPhotoBytes){
-    editPhotoError="Фото должно занимать не больше 5 МБ.";
+    editPhotoError=$"Фото должно занимать не больше {GiftWriteInput.MaxPhotoMegabytes} МБ.";
     return;
    }
    using var stream=args.File.OpenReadStream(GiftWriteInput.MaxPhotoBytes);
