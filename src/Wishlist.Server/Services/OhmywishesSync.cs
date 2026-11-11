@@ -304,15 +304,18 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         if (photos == null) return downloads;
 
         var stored = await db.Gifts.AsNoTracking()
-            .Where(g => g.OwnerId == userId && g.OhmywishesKey != null && g.PhotoVersion != null)
-            .ToDictionaryAsync(g => g.OhmywishesKey!, g => g.OhmywishesPhotoUrl, ct);
+            .Where(g => g.OwnerId == userId && g.OhmywishesKey != null &&
+                (g.PhotoVersion != null || g.OhmywishesPhotoEdited))
+            .Select(g => new { g.OhmywishesKey, g.OhmywishesPhotoUrl, g.OhmywishesPhotoEdited })
+            .ToDictionaryAsync(g => g.OhmywishesKey!, ct);
         var started = Stopwatch.GetTimestamp();
         var bytes = 0;
         foreach (var (id, wish) in snapshot)
         {
             if (Stopwatch.GetElapsedTime(started) >= TimeSpan.FromSeconds(20) ||
                 bytes >= 3 * GiftWriteInput.MaxPhotoBytes) break;
-            if (wish.PhotoUrl is not { } url || stored.GetValueOrDefault(WishKey(accountId, id)) == url ||
+            var gift = stored.GetValueOrDefault(WishKey(accountId, id));
+            if (wish.PhotoUrl is not { } url || gift?.OhmywishesPhotoEdited == true || gift?.OhmywishesPhotoUrl == url ||
                 downloads.ContainsKey(url)) continue;
 
             if (await photos.Download(url, ct) is not { } photo) continue;
@@ -373,12 +376,13 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             if (input.Occupied is { } occupied &&
                 (gift.OhmywishesReservationChanged == null || gift.OhmywishesReservationChanged <= snapshotStarted))
                 gift.OhmywishesOccupied = occupied;
-            if (gift.Details != input.Details)
+            if (!gift.OhmywishesDetailsEdited && gift.Details != input.Details)
             {
                 gift.Edit(userId, input.Details);
                 Notify(gift, "Желание изменилось в Ohmywishes.");
             }
-            await StorePhoto(gift, input.PhotoUrl, downloads, ct);
+            if (!gift.OhmywishesPhotoEdited)
+                await StorePhoto(gift, input.PhotoUrl, downloads, ct);
             gift.OhmywishesHidden = false;
         }
         var company = connection.DefaultCompanyId;
