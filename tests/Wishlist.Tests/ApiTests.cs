@@ -456,7 +456,68 @@ public class ApiTests(PostgresFixture db) {
   Assert.True(result.GetPixel(400,200).Red > 240);
   Assert.True(result.GetPixel(400,1400).Blue > 240);
  }
- WebApplicationFactory<Program> Factory(string environment="Testing")=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");});
+ [Fact]
+ public async Task ArtworkUsernameAloneDoesNotGrantManagement()
+ {
+  var s = await Seed();
+  await using (var ctx = new AppDb(db.Options))
+  {
+   var user = await ctx.Users.FindAsync(s.owner.Id);
+   user!.Username = "sharphurt";
+   await ctx.SaveChangesAsync();
+  }
+  var anotherTelegramId = s.owner.TelegramId == long.MaxValue ? s.owner.TelegramId - 1 : s.owner.TelegramId + 1;
+  using var app = Factory(artworkManagerIds: anotherTelegramId.ToString());
+  using var client = app.CreateClient();
+  Bearer(client, s.owner);
+
+  var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
+  Assert.False(manifest.GetProperty("canManage").GetBoolean());
+  using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
+  Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+ }
+
+ [Fact]
+ public async Task ConfiguredTelegramIdGrantsManagementAfterUsernameChanges()
+ {
+  var s = await Seed();
+  await using (var ctx = new AppDb(db.Options))
+  {
+   var user = await ctx.Users.FindAsync(s.owner.Id);
+   user!.Username = "renamed-account";
+   await ctx.SaveChangesAsync();
+  }
+  using var app = Factory(artworkManagerIds: s.owner.TelegramId.ToString());
+  using var client = app.CreateClient();
+  Bearer(client, s.owner);
+
+  var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
+  Assert.True(manifest.GetProperty("canManage").GetBoolean());
+  using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
+  Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+ }
+
+ [Fact]
+ public async Task ArtworkManagementIsDisabledWhenAllowlistIsMissing()
+ {
+  var s = await Seed();
+  await using (var ctx = new AppDb(db.Options))
+  {
+   var user = await ctx.Users.FindAsync(s.owner.Id);
+   user!.Username = "sharphurt";
+   await ctx.SaveChangesAsync();
+  }
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, s.owner);
+
+  var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
+  Assert.False(manifest.GetProperty("canManage").GetBoolean());
+  using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
+  Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+ }
+
+ WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null)=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");b.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}

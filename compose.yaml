@@ -29,6 +29,7 @@ services:
       Telegram__BotUsername: ${TELEGRAM_BOT_USERNAME:-}
       Telegram__ClientId: ${TELEGRAM_CLIENT_ID:-}
       Telegram__ClientSecret: ${TELEGRAM_CLIENT_SECRET:-}
+      CardArtwork__ManagerTelegramIds: ${CARD_ARTWORK_MANAGER_TELEGRAM_IDS:-}
       Ohmywishes__ClientId: ${OHMYWISHES_CLIENT_ID:-}
       Ohmywishes__ClientSecret: ${OHMYWISHES_CLIENT_SECRET:-}
       Ohmywishes__TokenAuthMethod: ${OHMYWISHES_TOKEN_AUTH_METHOD:-client_secret_basic}
