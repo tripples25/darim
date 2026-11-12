@@ -69,7 +69,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
     }
 
     public async Task<GiftDto> Change(Guid id, Guid giftId, GiftInput? input = null, GiftActionInput? action = null,
-        bool archive = false, GiftVisibility? visibility = null, CancellationToken ct = default)
+        bool? archive = null, GiftVisibility? visibility = null, CancellationToken ct = default)
     {
         var user = await User(id);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -81,6 +81,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         var before = gift.Donors();
         Guid? company = null;
         string? reservePath = null, cancelPath = null;
+        var restored = false;
 
         if (action != null)
         {
@@ -132,7 +133,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 throw visible ? new RuleException("Изменить желание может только владелец.", 403)
                     : new RuleException("Подарок не найден.", 404);
             }
-            if (gift.OhmywishesKey != null && archive)
+            if (gift.OhmywishesKey != null && archive == true)
                 throw new RuleException("Архивируйте желание в Ohmywishes.");
             if (input != null)
             {
@@ -151,12 +152,18 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                     if (write.Visibility != null) await UpdateVisibility(gift, write.Visibility);
                 }
             }
-            if (archive) gift.Archive(id);
+            if (archive == true) gift.Archive(id);
+            if (archive == false && gift.Archived)
+            {
+                gift.Restore(id);
+                restored = true;
+            }
             if (visibility != null) await UpdateVisibility(gift, visibility);
         }
 
         var recipients = before.Concat(gift.Donors()).Distinct().Where(x => x != id && x != gift.OwnerId);
-        var verb = input != null ? "Желание изменено" : archive ? "Желание отправлено в архив" : action?.Action switch
+        var verb = input != null ? "Желание изменено" : archive == true ? "Желание отправлено в архив"
+            : restored ? "Желание возвращено из архива" : action?.Action switch
         {
             "cancel" => "Бронь или распил отменены",
             "buy" => "Подарок отмечен купленным",
@@ -164,7 +171,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             "transfer" => "Координатор распила изменён",
             _ => "Состав распила обновлён"
         };
-        if (input != null || archive || action != null && !gift.Unlimited)
+        if (input != null || archive == true || restored || action != null && !gift.Unlimited)
             foreach (var recipient in recipients)
                 db.Notices.Add(new() { UserId = recipient, Text = $"{verb}: «{gift.Title}»." });
         if (sharing != null) await sharing.Reconcile(gift, ct);
