@@ -97,4 +97,3 @@ public class AccountService(AppDb db) {
  public async Task Profile(Guid id,ProfileInput input){if(string.IsNullOrWhiteSpace(input.Name)||input.Name.Trim().Length>100||(input.Contact?.Length??0)>200)throw new RuleException("Проверьте имя и контакт (до 200 символов).",400);var u=await db.Users.SingleAsync(x=>x.Id==id);u.Name=input.Name.Trim();u.Contact=string.IsNullOrWhiteSpace(input.Contact)?null:input.Contact.Trim();await db.SaveChangesAsync();}
  async Task<AppUser> LockedUser(Guid id)=>await db.Users.FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"Id\"={id} FOR UPDATE").SingleAsync();
 }
-

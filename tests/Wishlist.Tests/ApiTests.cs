@@ -516,5 +516,3 @@ public class ApiTests(PostgresFixture db) {
   var newUser=new AppUser{Name="Новый",TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};using(var ctx=new AppDb(db.Options)){ctx.Users.Add(newUser);await ctx.SaveChangesAsync();}Bearer(client,newUser);Assert.Equal(HttpStatusCode.NoContent,(await client.PostAsJsonAsync("/api/company/join",new JoinCompanyInput(invite!.Token))).StatusCode);var me=await client.GetFromJsonAsync<MeDto>("/api/me");Assert.Equal(s.owner.CompanyId,me!.Company!.Id);Assert.All(me.Company.Members,x=>Assert.Null(x.Contact));
  }
 }
-
-

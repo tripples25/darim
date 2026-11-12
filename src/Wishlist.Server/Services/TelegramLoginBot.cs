@@ -53,7 +53,7 @@ public sealed class TelegramLoginBot(IHttpClientFactory clients,IConfiguration c
   }else if(command=="/start"||command=="/help")reply="Чтобы войти в Дарим без переходов через Telegram, отправьте /login и введите полученный код на сайте. Подходит и для первого входа.";
   else return;
   try{
-   using var sent=await client.PostAsJsonAsync($"https://api.telegram.org/bot{token}/sendMessage",new{chat_id=chat.GetProperty("id").GetInt64(),text=reply,protect_content=true},ct);
+   using var sent=await client.PostAsJsonAsync($"https://api.telegram.org/bot{token}/sendMessage",new{chat_id=chat.GetProperty("id").GetInt64(),text=reply,entities=code==null?Array.Empty<object>():new object[]{new{type="code",offset="Код для входа в Дарим: ".Length,length=code.Length}}},ct);
    sent.EnsureSuccessStatusCode();
    using var result=JsonDocument.Parse(await sent.Content.ReadAsStringAsync(ct));
    if(!result.RootElement.GetProperty("ok").GetBoolean())throw new HttpRequestException();

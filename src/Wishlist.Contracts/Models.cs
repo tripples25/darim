@@ -34,4 +34,3 @@ public record CsrfDto(string Token);
 public record AuthInfoDto(bool TelegramConfigured, bool DemoEnabled, string? BotUsername = null, bool CodeLoginEnabled = false);
 
 public record CodeLoginInput(string? Code);
-
