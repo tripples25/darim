@@ -14,6 +14,11 @@ public class TelegramTests {
   return string.Join("&",fields.Select(x=>$"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(x.Value)}"))+"&hash="+hash;
  }
  [Fact] public void AcceptsVerifiedTelegramIdentityWith64BitId() {var x=TelegramInitData.Validate(Signed(),Bot,Now);Assert.Equal(123456789012L,x.Id);Assert.Equal("Юлия",x.Name);}
+ [Fact] public void ReadsAvatarFromSignedMiniAppUser(){
+  const string photo="https://cdn4.telesco.pe/file/avatar.jpg";
+  var input=Signed(user:JsonSerializer.Serialize(new{id=123456789012L,first_name="Юлия",photo_url=photo}));
+  Assert.Equal(photo,TelegramInitData.Validate(input,Bot,Now).AvatarUrl);
+ }
  [Fact] public void RejectsTamperedUser() => Assert.Throws<RuleException>(()=>TelegramInitData.Validate(Signed().Replace("julia","evil"),Bot,Now));
  [Fact] public void RejectsExpiredPayload() => Assert.Throws<RuleException>(()=>TelegramInitData.Validate(Signed(Now.ToUnixTimeSeconds()-301),Bot,Now));
  [Fact] public void RejectsFuturePayload() => Assert.Throws<RuleException>(()=>TelegramInitData.Validate(Signed(Now.ToUnixTimeSeconds()+60),Bot,Now));

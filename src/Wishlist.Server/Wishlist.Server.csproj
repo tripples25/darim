@@ -9,4 +9,7 @@
 <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.14" /><PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
 <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
 <PackageReference Include="prometheus-net" Version="8.2.1" />
+<PackageReference Include="SkiaSharp" Version="4.156.0" />
+<PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.156.0" />
+<PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.3.1" />
 </ItemGroup></Project>

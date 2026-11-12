@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SkiaSharp;
 using Wishlist.Contracts;
 using Wishlist.Server.Data;
 using Wishlist.Server.Services;
@@ -84,6 +85,29 @@ public class ApiTests(PostgresFixture db) {
   Assert.Equal(new[] { second.gift, selected.Id, shared.Id }.Order(), (await GiftIds(client, second.owner.CompanyId)).Order());
   Bearer(client, outside.donor);
   Assert.Equal(outside.gift, Assert.Single(await GiftIds(client, outside.owner.CompanyId)));
+ }
+
+ [Fact]
+ public async Task CompanyFeedCanExcludeCurrentUsersWishes()
+ {
+  var seed = await Seed();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, seed.donor);
+  var otherGift = await CreateGift(client, "Желание другого участника", true);
+  Bearer(client, seed.owner);
+
+  var feed = $"/api/gifts?companyId={seed.owner.CompanyId}";
+  foreach (var path in new[] { feed, $"{feed}&includeMine=true" })
+  {
+   var all = (await client.GetFromJsonAsync<GiftDto[]>(path))!;
+   Assert.Equal(new[] { seed.gift, otherGift.Id }.Order(), all.Select(gift => gift.Id).Order());
+  }
+
+  var filtered = (await client.GetFromJsonAsync<GiftDto[]>($"{feed}&includeMine=false"))!;
+  Assert.Equal(otherGift.Id, Assert.Single(filtered).Id);
+  var mine = (await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/mine"))!;
+  Assert.Equal(seed.gift, Assert.Single(mine).Id);
  }
 
  [Fact]
@@ -303,9 +327,9 @@ public class ApiTests(PostgresFixture db) {
   Bearer(client,seed.donor);
   using var photo=await client.GetAsync(photoPath);
   photo.EnsureSuccessStatusCode();
-  Assert.Equal("image/png",photo.Content.Headers.ContentType!.MediaType);
   Assert.True(photo.Headers.CacheControl!.NoStore);
-  Assert.Equal(png,await photo.Content.ReadAsByteArrayAsync());
+  using var smallPhoto=SKBitmap.Decode(await photo.Content.ReadAsByteArrayAsync());
+  Assert.Equal(new SKSizeI(1,1),new SKSizeI(smallPhoto.Width,smallPhoto.Height));
   Assert.Equal(HttpStatusCode.Forbidden,(await client.PutAsJsonAsync(giftPath,
    new GiftWriteInput("Книга",RemovePhoto:true))).StatusCode);
   client.DefaultRequestHeaders.Authorization=null;
@@ -332,6 +356,106 @@ public class ApiTests(PostgresFixture db) {
   Bearer(client,seed.donor);
   Assert.Equal(HttpStatusCode.NotFound,(await client.GetAsync($"{giftPath}/photo/{restoredVersion}")).StatusCode);
  }
+
+ [Fact]
+ public async Task OwnerCanRestoreArchivedGiftWithoutLosingReservation()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  using var client=app.CreateClient();
+  var giftPath=$"/api/gifts/{seed.gift}";
+
+  Bearer(client,seed.donor);
+  (await client.PostAsJsonAsync($"{giftPath}/actions",new GiftActionInput("reserve"))).EnsureSuccessStatusCode();
+  Bearer(client,seed.owner);
+  (await client.PostAsync($"{giftPath}/archive",null)).EnsureSuccessStatusCode();
+
+  Bearer(client,seed.donor);
+  using var denied=await client.PostAsync($"{giftPath}/restore",null);
+  Assert.Equal(HttpStatusCode.NotFound,denied.StatusCode);
+  var archived=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  Assert.True(archived.Archived);
+
+  Bearer(client,seed.owner);
+  using var response=await client.PostAsync($"{giftPath}/restore",null);
+  response.EnsureSuccessStatusCode();
+  Assert.False((await response.Content.ReadFromJsonAsync<GiftDto>())!.Archived);
+
+  Bearer(client,seed.donor);
+  var restored=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  Assert.Equal(seed.gift,restored.Id);
+  Assert.False(restored.Archived);
+  Assert.True(restored.Participation!.IsMine);
+ }
+
+ [Fact]
+ public async Task LargeUploadIsStoredSmallerWithProportionsAndTransparencyIntact()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  app.UseKestrel(options => options.Listen(IPAddress.Loopback,0));
+  using var client=app.CreateClient();
+  Bearer(client,seed.owner);
+
+  using var source=new SKBitmap(2400,1600);
+  using (var canvas=new SKCanvas(source))
+  using (var paint=new SKPaint { Color=SKColors.Red })
+  {
+   canvas.Clear(SKColors.Transparent);
+   canvas.DrawRect(0,0,1200,1600,paint);
+  }
+  using var pixels=source.PeekPixels();
+  using var png=pixels.Encode(new SKPngEncoderOptions(SKPngEncoderFilterFlags.NoFilters,0));
+  Assert.NotNull(png);
+  Assert.InRange(png.Size,14*1024*1024,15*1024*1024);
+
+  using var created=await client.PostAsJsonAsync("/api/gifts",new GiftWriteInput("Фото",Photo:png.ToArray()));
+  created.EnsureSuccessStatusCode();
+  var gift=(await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  using var response=await client.GetAsync($"/api/gifts/{gift.Id}/photo/{gift.PhotoVersion}");
+  response.EnsureSuccessStatusCode();
+  Assert.Equal("image/webp",response.Content.Headers.ContentType!.MediaType);
+  var saved=await response.Content.ReadAsByteArrayAsync();
+  Assert.True(saved.Length < png.Size / 10);
+  using var result=SKBitmap.Decode(saved);
+  Assert.Equal(1600,result.Width);
+  Assert.Equal(1067,result.Height);
+  Assert.Equal(SKColors.Red,result.GetPixel(100,100));
+  Assert.Equal(0,result.GetPixel(1500,100).Alpha);
+
+  var oversized=new byte[15*1024*1024+1];
+  using var rejected=await client.PutAsJsonAsync($"/api/gifts/{gift.Id}",new GiftWriteInput("Фото",Photo:oversized));
+  Assert.Equal(HttpStatusCode.BadRequest,rejected.StatusCode);
+  Assert.Contains("15 МБ",(await rejected.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>())!.Title);
+ }
+
+ [Fact]
+ public async Task ResizedJpegKeepsItsExifOrientation()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  using var client=app.CreateClient();
+  Bearer(client,seed.owner);
+  using var source=new SKBitmap(2400,1200,true);
+  using (var canvas=new SKCanvas(source))
+  using (var paint=new SKPaint { Color=SKColors.Red })
+  {
+   canvas.Clear(SKColors.Blue);
+   canvas.DrawRect(0,0,1200,1200,paint);
+  }
+  using var jpeg=source.Encode(SKEncodedImageFormat.Jpeg,95);
+  var bytes=jpeg.ToArray();
+  // APP1 EXIF tag 0x0112 with value 6: rotate 90 degrees clockwise.
+  var exif=Convert.FromHexString("FFE1002245786966000049492A0008000000010012010300010000000600000000000000");
+  using var created=await client.PostAsJsonAsync("/api/gifts",new GiftWriteInput("Портрет",Photo:[.. bytes[..2], .. exif, .. bytes[2..]]));
+  created.EnsureSuccessStatusCode();
+  var gift=(await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  using var result=SKBitmap.Decode(await client.GetByteArrayAsync($"/api/gifts/{gift.Id}/photo/{gift.PhotoVersion}"));
+  Assert.Equal(800,result.Width);
+  Assert.Equal(1600,result.Height);
+  Assert.True(result.GetPixel(400,200).Red > 240);
+  Assert.True(result.GetPixel(400,1400).Blue > 240);
+ }
  WebApplicationFactory<Program> Factory(string environment="Testing")=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
@@ -351,6 +475,29 @@ public class ApiTests(PostgresFixture db) {
   Assert.Equal(HttpStatusCode.Unauthorized,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
  }
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}
+ [Fact] public async Task TelegramAvatarIsSavedAndExposedOnlyToSplitParticipants(){
+  const string avatar="https://cdn4.telesco.pe/file/avatar.jpg";
+  var s=await Seed();
+  await using(var ctx=new AppDb(db.Options)){
+   var identity=AuthSetup.IdentityFromClaims(new ClaimsPrincipal(new ClaimsIdentity(
+    [new("id",s.donor.TelegramId.ToString()),new("name",s.donor.Name),new("picture",avatar)])));
+   await new AccountService(ctx).Login(identity);
+   var member=new AppUser{Name="Зритель",CompanyId=s.owner.CompanyId,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};
+   ctx.Users.Add(member);
+   ctx.Memberships.Add(new(){UserId=member.Id,CompanyId=s.owner.CompanyId!.Value});
+   await ctx.SaveChangesAsync();
+   using var app=Factory();
+   using var client=app.CreateClient();
+   Bearer(client,s.donor);
+   using var response=await client.PostAsJsonAsync($"/api/gifts/{s.gift}/actions",new GiftActionInput("split",2));
+   response.EnsureSuccessStatusCode();
+   var created=await response.Content.ReadFromJsonAsync<GiftDto>();
+   Assert.Equal(avatar,Assert.Single(created!.Participation!.Participants!).AvatarUrl);
+   Bearer(client,member);
+   var visible=(await client.GetFromJsonAsync<GiftDto[]>("/api/gifts"))!.Single(gift=>gift.Id==s.gift);
+   Assert.Null(visible.Participation!.Participants);
+  }
+ }
  [Theory][InlineData("0")][InlineData("-1")][InlineData("invalid")] public void BrowserRejectsInvalidTelegramId(string id){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234"),new("id",id)]));Assert.Throws<Wishlist.Core.RuleException>(()=>AuthSetup.IdentityFromClaims(claims));}
  [Fact] public async Task AnonymousCannotReadWishlist(){using var app=Factory();using var client=app.CreateClient();Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync("/api/gifts")).StatusCode);}
  [Fact] public async Task BearerMutationReturnsOwnerSafeView(){var s=await Seed();using var app=Factory();using var client=app.CreateClient();Bearer(client,s.donor);Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync($"/api/gifts/{s.gift}/actions",new GiftActionInput("reserve"))).StatusCode);Bearer(client,s.owner);var dto=(await client.GetFromJsonAsync<GiftDto[]>("/api/gifts"))!.Single(x=>x.Id==s.gift);Assert.Null(dto.Participation);Assert.Null(dto.Original);}

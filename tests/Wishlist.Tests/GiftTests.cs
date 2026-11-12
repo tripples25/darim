@@ -28,4 +28,26 @@ public class GiftTests {
  [Fact] public void UnsafeLinksRejected() => Assert.Throws<RuleException>(()=>Gift.New(Guid.NewGuid(),owner,new("Подарок",Url:"javascript:alert(1)")));
  [Fact] public void NegativePriceRejected() => Assert.Throws<RuleException>(()=>Gift.New(Guid.NewGuid(),owner,new("Подарок",Price:-1)));
  [Fact] public void EditingRequiresOwner() => Assert.Throws<RuleException>(()=>New().Edit(bob,new("Другое")));
+ [Fact]
+ public void UnlimitedReservationsAreIndependentAndPrivate()
+ {
+  var gift = New();
+  gift.Unlimited = true;
+  gift.Act(alice, new("reserve"), 3, false);
+  gift.Edit(owner, new("Обновлённое желание"));
+  gift.Act(bob, new("reserve"), 3, false);
+  Assert.Throws<RuleException>(() => gift.Act(bob, new("reserve"), 3, false));
+  Assert.Throws<RuleException>(() => gift.Act(outsider, new("split", 2), 3, true));
+  Assert.Equal("Кофемолка", gift.View(alice, People()).Original!.Title);
+  Assert.Equal("Обновлённое желание", gift.View(bob, People()).Original!.Title);
+  Assert.Null(gift.View(owner, People()).Participation);
+  Assert.Equal("free", gift.View(outsider, People()).Participation!.Mode);
+  gift.Act(alice, new("buy"), 3, false);
+  gift.Act(bob, new("cancel"), 3, false);
+  Assert.True(gift.View(alice, People()).Participation!.Bought);
+  Assert.Equal("free", gift.View(bob, People()).Participation!.Mode);
+  Assert.Throws<RuleException>(() => gift.Act(alice, new("cancel"), 3, false));
+  gift.Act(bob, new("reserve"), 3, false);
+  Assert.False(gift.View(bob, People()).Participation!.Bought);
+ }
 }

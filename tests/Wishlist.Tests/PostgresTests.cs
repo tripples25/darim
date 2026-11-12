@@ -15,6 +15,27 @@ public class PostgresFixture:IAsyncLifetime {
 public class PostgresCollection:ICollectionFixture<PostgresFixture>{}
 [Collection("Postgres")]
 public class PostgresTests(PostgresFixture fixture) {
+ [Fact]
+ public async Task UnlimitedGiftSupportsConcurrentIndependentReservations()
+ {
+  var (owner, alice, bob, carol, _) = await Setup();
+  await using var db = new AppDb(fixture.Options);
+  var service = new GiftService(db);
+  var gift = await service.Create(owner, new GiftWriteInput("Цветы", Unlimited: true));
+
+  Assert.All(await Task.WhenAll(Try(alice, gift.Id, "reserve"), Try(bob, gift.Id, "reserve")),
+   reserved => Assert.True(reserved));
+  Assert.False(await Try(alice, gift.Id, "reserve"));
+  Assert.Equal("free", Assert.Single(await service.List(carol), card => card.Id == gift.Id).Participation!.Mode);
+  Assert.Null(Assert.Single(await service.Mine(owner), card => card.Id == gift.Id).Participation);
+
+  await service.Change(alice, gift.Id, action: new("buy"));
+  await service.Change(bob, gift.Id, action: new("cancel"));
+  Assert.True(Assert.Single(await service.Giving(alice)).Participation!.Bought);
+  Assert.Empty(await service.Giving(bob));
+  Assert.True(await Try(carol, gift.Id, "reserve"));
+ }
+
  async Task<(Guid owner,Guid a,Guid b,Guid c,Guid gift)> Setup(){
   await using var db=new AppDb(fixture.Options);var company=new Company{Name="Друзья",InviteHash=Guid.NewGuid().ToString()};db.Companies.Add(company);await db.SaveChangesAsync();
   var users=Enumerable.Range(0,4).Select(_=>new AppUser{Name="Друг",TelegramId=Random.Shared.NextInt64(1,long.MaxValue),CompanyId=company.Id,Contact="@friend"}).ToArray();db.Users.AddRange(users);db.Memberships.AddRange(users.Select(u=>new CompanyMembership{UserId=u.Id,CompanyId=company.Id}));await db.SaveChangesAsync();

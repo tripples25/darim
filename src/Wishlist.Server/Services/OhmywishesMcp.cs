@@ -5,7 +5,7 @@ using Wishlist.Contracts;
 
 namespace Wishlist.Server.Services;
 
-public sealed record OhmywishesWish(GiftInput Details, string? PhotoUrl);
+public sealed record OhmywishesWish(GiftInput Details, string? PhotoUrl, bool? Occupied = null);
 
 public sealed class OhmywishesMcp(HttpClient http)
 {

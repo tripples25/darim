@@ -60,13 +60,31 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<DateOnly?>("OccasionDate")
                         .HasColumnType("date");
 
+                    b.Property<bool>("OhmywishesDetailsEdited")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("OhmywishesHidden")
                         .HasColumnType("boolean");
 
                     b.Property<string>("OhmywishesKey")
                         .HasColumnType("text");
 
+                    b.Property<bool>("OhmywishesOccupied")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("OhmywishesPhotoEdited")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("OhmywishesPhotoUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("OhmywishesReservationChanged")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OhmywishesReservationSource")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OhmywishesWebId")
                         .HasColumnType("text");
 
                     b.Property<string>("OriginalJson")
@@ -89,6 +107,9 @@ namespace Wishlist.Server.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
+
+                    b.Property<bool>("Unlimited")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Url")
                         .HasColumnType("text");
@@ -133,6 +154,12 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("Bought")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OriginalJson")
+                        .HasColumnType("text");
+
                     b.HasKey("GiftId", "UserId");
 
                     b.HasIndex("UserId");
@@ -160,6 +187,9 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<Guid?>("OhmywishesAttempt")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("TelegramAvatarUrl")
+                        .HasColumnType("text");
+
                     b.Property<long>("TelegramId")
                         .HasColumnType("bigint");
 
@@ -174,6 +204,34 @@ namespace Wishlist.Server.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Wishlist.Server.Data.CardArtwork", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BuiltIn")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("character varying(7)");
+
+                    b.Property<byte[]>("Data")
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CardArtwork", t =>
+                        {
+                            t.HasCheckConstraint("CK_CardArtwork_Category", "\"Category\" IN ('light','dark','overlay')");
+
+                            t.HasCheckConstraint("CK_CardArtwork_Source", "(\"BuiltIn\" IS NULL) <> (\"Data\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Wishlist.Server.Data.Company", b =>

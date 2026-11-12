@@ -27,7 +27,7 @@ public partial class Home {
  string editTitle="",editUrl="",editComment="",editOccasion="Без повода",editCustomOccasion="";decimal? editPrice;DateTime? editDate;
  byte[]? editPhoto;
  string? editPhotoPreview,editPhotoError;
- bool removeEditPhoto,readingEditPhoto;
+ bool removeEditPhoto,readingEditPhoto,editUnlimited;
  int editorRevision,photoPickerKey;
  string profileName="",profileContact="",companyName="",joinToken="",transferTo="",confirmAction="",inviteLimitMode="one";int splitSlots=2,inviteLimit=2;int? issuedInviteLimit;
  readonly string[] demoNames=["Юлия","Макс","Аня","Саша"];
@@ -48,7 +48,7 @@ public partial class Home {
    .Where(g=>tab=="mine"||availability==""||(availability=="free"&&g.Participation?.Mode=="free")||(availability=="split"&&g.Participation is {Mode:"split",Bought:false} s&&s.Taken<s.Slots&&!s.IsMine));
  }
  string DialogTitle=>dialog switch{"editor"=>selected==null?"Новое желание":"Редактировать желание","visibility"=>"Видимость желания","companies"=>"Мои компании","shares"=>"Ссылки на желания","split"=>"Дарить вместе","details"=>"Ваш подарок","profile"=>"Мой профиль","invite"=>"Пригласить друзей","notices"=>"Уведомления","confirm"=>"Подтвердите действие",_=>""};
- string ConfirmText=>confirmAction switch{"reserve"=>"Забронировать подарок? Остальные увидят, что он занят. Получатель ничего не узнает.","archive"=>"Отправить желание в архив? Дарители получат уведомление, история покупки сохранится.","buy"=>"Подарок уже куплен? После подтверждения снять бронь или выйти из распила будет нельзя.","cancel"=>"Отменить бронь или весь распил? Подарок снова станет свободным, участники получат уведомление.","leave"=>"Освободить свою долю? Остальные участники получат уведомление.",_=>"Продолжить?"};
+ string ConfirmText=>confirmAction switch{"reserve" when selected?.Unlimited==true=>"Забронировать подарок? Другие дарители смогут забронировать его отдельно.","cancel" when selected?.Unlimited==true=>"Снять вашу бронь на этот подарок?","reserve"=>"Забронировать подарок? Остальные увидят, что он занят. Получатель ничего не узнает.","archive"=>"Отправить желание в архив? Дарители получат уведомление, история покупки сохранится.","buy"=>"Подарок уже куплен? После подтверждения снять бронь или выйти из распила будет нельзя.","cancel"=>"Отменить бронь или весь распил? Подарок снова станет свободным, участники получат уведомление.","leave"=>"Освободить свою долю? Остальные участники получат уведомление.",_=>"Продолжить?"};
  static string Initial(string name)=>string.IsNullOrWhiteSpace(name)?"?":name.Trim()[..1].ToUpperInvariant();
  protected override async Task OnAfterRenderAsync(bool first){if(first){await Initialize();reference=DotNetObjectReference.Create(this);await JS.InvokeVoidAsync("wishlist.watchFocus",reference);polling=Poll();}}
  async Task Initialize(){
@@ -147,7 +147,7 @@ public partial class Home {
  async Task Show(string value){dialog=value;error=null;StateHasChanged();await JS.InvokeVoidAsync("wishlist.showDialog","app-dialog");}
  async Task CloseDialog(){await JS.InvokeVoidAsync("wishlist.closeDialog","app-dialog");dialog=null;}
  void DialogClosed(){dialog=null;error=null;ResetPhotoDraft();}
- async Task OpenEditor(GiftDto? gift){selected=gift;ResetPhotoDraft();SetVisibility(gift);var d=gift?.Details;editTitle=d?.Title??"";editUrl=d?.Url??"";editPrice=d?.Price;editComment=d?.Comment??"";editDate=d?.OccasionDate?.ToDateTime(TimeOnly.MinValue);editOccasion=d?.Occasion??"Без повода";editCustomOccasion="";if(editOccasion is not("Без повода" or "День рождения" or "Новый год")){editCustomOccasion=editOccasion;editOccasion="custom";}await Show("editor");}
+ async Task OpenEditor(GiftDto? gift){selected=gift;ResetPhotoDraft();editUnlimited=gift?.Unlimited==true;SetVisibility(gift);var d=gift?.Details;editTitle=d?.Title??"";editUrl=d?.Url??"";editPrice=d?.Price;editComment=d?.Comment??"";editDate=d?.OccasionDate?.ToDateTime(TimeOnly.MinValue);editOccasion=d?.Occasion??"Без повода";editCustomOccasion="";if(editOccasion is not("Без повода" or "День рождения" or "Новый год")){editCustomOccasion=editOccasion;editOccasion="custom";}await Show("editor");}
  void SetVisibility(GiftDto? gift){
   visibilityCompanies.Clear();
   if(gift?.Visibility is {} visibility)visibilityCompanies.UnionWith(visibility.CompanyIds);
@@ -173,7 +173,7 @@ public partial class Home {
   readingEditPhoto=true;editPhotoError=null;
   try{
    if(args.File.Size>GiftWriteInput.MaxPhotoBytes){
-    editPhotoError="Фото должно занимать не больше 5 МБ.";
+    editPhotoError=$"Фото должно занимать не больше {GiftWriteInput.MaxPhotoMegabytes} МБ.";
     return;
    }
    using var stream=args.File.OpenReadStream(GiftWriteInput.MaxPhotoBytes);
@@ -203,7 +203,7 @@ public partial class Home {
   if(readingEditPhoto||!VisibilityValid)return;
   await Run(async()=>{
    var input=new GiftWriteInput(editTitle,editUrl,editPrice,editComment,editOccasion=="custom"?editCustomOccasion:editOccasion,
-    editDate is {} date?DateOnly.FromDateTime(date):null,editPhoto,removeEditPhoto,EditVisibility);
+    editDate is {} date?DateOnly.FromDateTime(date):null,editPhoto,removeEditPhoto,EditVisibility,editUnlimited);
    await Api.Change(selected==null?"api/gifts":$"api/gifts/{selected.Id}",input,selected!=null);
    Snackbar.Add("Желание сохранено",Severity.Success);
   },true);

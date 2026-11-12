@@ -7,7 +7,7 @@ using Wishlist.Contracts;
 
 namespace Wishlist.Server.Services;
 
-public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb>? logger = null)
+public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb>? logger = null, OhmywishesReservations? reservations = null)
 {
     private const string Origin = "https://ohmywishes.com";
     private const int PageSize = 20;
@@ -63,7 +63,7 @@ public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb
                     if ((sharedVisibility is null or "public" or "inherit_public" or "by_link" or "inherit_by_link")
                         && (!wish.TryGetProperty("isPrivate", out _) || !Flag(wish, "isPrivate"))
                         && (!wish.TryGetProperty("isFulfilled", out _) || !Flag(wish, "isFulfilled")))
-                        snapshot.Add(id, OhmywishesMcp.ReadWishFields(wish));
+                        snapshot.Add(id, await WithReservation(OhmywishesMcp.ReadWishFields(wish), id, $"{wishesPath}/{id}", ct));
                     continue;
                 }
                 var visibility = OhmywishesMcp.String(wish, "visibility")
@@ -74,12 +74,26 @@ public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb
                 if (lists.ValueKind != JsonValueKind.Array)
                     throw new InvalidDataException("Missing Ohmywishes web wish lists.");
                 if (lists.EnumerateArray().Any(entry => Id(entry) == list) && OhmywishesMcp.ReadWish(wish) is { } input)
-                    snapshot.Add(id, input);
+                    snapshot.Add(id, await WithReservation(input, id, $"wishes/{id}", ct));
             }
             // The profile or list can become private while card details are being fetched.
             return await ListAvailable(account, list, reference, shared, ct) ? snapshot : [];
         }
         throw new InvalidDataException("Ohmywishes web list exceeded the pilot pagination limit.");
+    }
+
+    private async Task<OhmywishesWish> WithReservation(OhmywishesWish wish, string id, string path, CancellationToken ct)
+    {
+        if (reservations?.Enabled != true) return wish;
+        try
+        {
+            return wish with { Occupied = (await reservations.Read(id, path, ct)).Occupied };
+        }
+        catch (Wishlist.Core.RuleException ex)
+        {
+            logger?.LogWarning("Ohmywishes reservation status unavailable ({Status}).", ex.Status);
+            return wish;
+        }
     }
 
     private async Task<bool> ListAvailable(string account, string list, string reference, bool shared, CancellationToken ct) =>

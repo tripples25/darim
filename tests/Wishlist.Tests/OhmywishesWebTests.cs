@@ -16,6 +16,7 @@ public class OhmywishesWebTests
     private const string Account = "111111111111111111111111";
     internal const string List = "222222222222222222222222";
     private const string Wish = "333333333333333333333333";
+    private const string AnotherWish = "444444444444444444444444";
     private const string Shared = "9f8b1234-d875-471b-85c3-51068cdfce67";
 
     [Theory]
@@ -134,6 +135,10 @@ public class OhmywishesWebTests
         public int UnavailablePages { get; set; }
         public TimeSpan PageCooldown { get; set; }
         public int PageRequests { get; private set; }
+        public int PhotoDownloads { get; private set; }
+        public bool PhotoUnavailable { get; set; }
+        public bool IncludeAnotherWish { get; set; }
+        public string WishTitle { get; set; } = "Книга";
         public string? PhotoUrl { get; set; } = "https://cdn.ohmywish.es/book.webp";
         public int Requests { get; private set; }
         public int GlobalWishRequests { get; private set; }
@@ -142,7 +147,18 @@ public class OhmywishesWebTests
         {
             Requests++;
             Assert.Equal(HttpMethod.Get, request.Method);
-            Assert.Equal("ohmywishes.com", request.RequestUri!.Host);
+            if (request.RequestUri!.Host == "cdn.ohmywish.es")
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Null(request.Headers.Authorization);
+                Assert.False(request.Headers.Contains("x-access-token"));
+                PhotoDownloads++;
+                return Task.FromResult(new HttpResponseMessage(PhotoUnavailable ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([0xff, 0xd8, 0xff, 0xd9])
+                });
+            }
+            Assert.Equal("ohmywishes.com", request.RequestUri.Host);
             Assert.Null(request.Headers.Authorization);
             Assert.False(request.Headers.Contains("Cookie"));
             if (GatewayDenies)
@@ -171,7 +187,8 @@ public class OhmywishesWebTests
             {
                 "/api/v3/users/dream" or $"/api/v3/users/{Account}" => new { item = new { id = Account, isPrivate = ProfilePrivate } },
                 var path when path == root => new { item = new { id = List, title = "Подарки" } },
-                var path when path == root + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
+                var path when path == root + "/wishes-v2" => new { items = (IncludeAnotherWish ? new[] { Wish, AnotherWish } : [Wish])
+                    .Select(id => new { id }).ToArray() },
                 var path when path == sharedRoot => new { item = new { id = List, title = "Подарки", visibility = "by_link" } },
                 var path when path == sharedRoot + "/wishes-v2" => new { items = new[] { new { id = Wish } } },
                 var path when path == sharedRoot + $"/wishes-v2/{Wish}" => new { item = new { id = Wish, title = "По ссылке", creator = new { id = Account },
@@ -180,9 +197,12 @@ public class OhmywishesWebTests
                         new { image = new { url = "https://cdn.ohmywish.es/full.webp",
                             thumbnails = new[] { new { url = "https://cdn.ohmywish.es/thumb.webp", width = 640, height = 640 } } } }
                     } } },
-                $"/api/v3/wishes/{Wish}" => new { item = new { id = Wish, title = "Книга", visibility = Visibility,
+                $"/api/v3/wishes/{Wish}" => new { item = new { id = Wish, title = WishTitle, visibility = Visibility,
                     isPrivate = Visibility == "private", isFulfilled = false, creator = new { id = Account },
                     photos = PhotoUrl == null ? [] : new[] { new { image = new { url = PhotoUrl } } },
+                    wishLists = new[] { new { id = List } } } },
+                $"/api/v3/wishes/{AnotherWish}" => new { item = new { id = AnotherWish, title = "Новое желание",
+                    visibility = "public", isPrivate = false, isFulfilled = false, creator = new { id = Account },
                     wishLists = new[] { new { id = List } } } },
                 _ => throw new InvalidOperationException("Unexpected web API route.")
             };
@@ -216,7 +236,7 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         using var http = new HttpClient(handler);
         var protection = new EphemeralDataProtectionProvider();
         var sync = new OhmywishesSync(db, options, new(options, protection, http), new(http), protection,
-            NullLogger<OhmywishesSync>.Instance, new(http));
+            NullLogger<OhmywishesSync>.Instance, new(http), photos: new OhmywishesPhotos(http));
         var link = $"https://ohmywishes.com/users/dream/lists/{OhmywishesWebTests.List}";
 
         Assert.True((await sync.Status(owner.Id, default)).WebApiEnabled);
@@ -234,7 +254,27 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         Assert.Equal(2, visible.Length);
         var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
         Assert.True(imported.FromOhmywishes);
-        Assert.Equal(handler.PhotoUrl, imported.PhotoUrl);
+        Assert.Null(imported.PhotoUrl);
+        Assert.NotNull(imported.PhotoVersion);
+        var photo = await gifts.Photo(donor.Id, imported.Id, imported.PhotoVersion.Value, default);
+        Assert.NotNull(photo);
+        Assert.Equal("image/jpeg", photo.ContentType);
+        Assert.Equal(new byte[] { 0xff, 0xd8, 0xff, 0xd9 }, photo.Data);
+        var downloads = handler.PhotoDownloads;
+        await RefreshOwner();
+        Assert.Equal(downloads, handler.PhotoDownloads);
+
+        handler.PhotoUrl = "https://cdn.ohmywish.es/replacement.jpg";
+        handler.PhotoUnavailable = true;
+        await RefreshOwner();
+        Assert.Equal(imported.PhotoVersion, Assert.Single(await gifts.List(donor.Id), gift => gift.Id == imported.Id).PhotoVersion);
+
+        handler.PhotoUnavailable = false;
+        await RefreshOwner();
+        var replacement = Assert.Single(await gifts.List(donor.Id), gift => gift.Id == imported.Id);
+        Assert.NotNull(replacement.PhotoVersion);
+        Assert.NotEqual(imported.PhotoVersion, replacement.PhotoVersion);
+        Assert.Null(await gifts.Photo(donor.Id, imported.Id, imported.PhotoVersion.Value, default));
         await gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("reserve"));
 
         handler.PhotoUrl = null;
@@ -243,6 +283,7 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         await sync.RunDue(default);
         var updated = Assert.Single(await gifts.List(donor.Id), gift => gift.Id == imported.Id);
         Assert.Null(updated.PhotoUrl);
+        Assert.Null(updated.PhotoVersion);
         Assert.True(updated.Participation!.IsMine);
 
         config["Ohmywishes:WebApiEnabled"] = "false";
@@ -257,5 +298,55 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         Assert.True(Assert.Single(await gifts.Giving(donor.Id)).Participation!.IsMine);
         await gifts.Change(donor.Id, imported.Id, action: new GiftActionInput("cancel"));
         Assert.Empty(await gifts.Giving(donor.Id));
+
+        async Task RefreshOwner()
+        {
+            await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
+            await sync.RunDue(default);
+        }
+    }
+
+    [Fact]
+    public async Task LocalEditsSurviveSyncAndNewWishesAreImported()
+    {
+        await using var db = new AppDb(fixture.Options);
+        var owner = new AppUser { Name = "Owner", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+        db.Users.Add(owner);
+        await db.SaveChangesAsync();
+        var options = new OhmywishesOptions(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["Ohmywishes:WebApiEnabled"] = "true" }).Build());
+        using var handler = new OhmywishesWebTests.WebHandler();
+        using var http = new HttpClient(handler);
+        var protection = new EphemeralDataProtectionProvider();
+        var sync = new OhmywishesSync(db, options, new(options, protection, http), new(http), protection,
+            NullLogger<OhmywishesSync>.Instance, new(http), photos: new OhmywishesPhotos(http));
+        var gifts = new GiftService(db, options);
+
+        await sync.ConnectWeb(owner.Id, $"https://ohmywishes.com/users/dream/lists/{OhmywishesWebTests.List}", default);
+        await sync.RunDue(default);
+        var imported = Assert.Single(await gifts.Mine(owner.Id));
+        Assert.NotNull(imported.PhotoVersion);
+
+        var requests = handler.Requests;
+        var edited = await gifts.Change(owner.Id, imported.Id, new GiftWriteInput(
+            "Моя книга", Price: 1500, Comment: "Новое издание", RemovePhoto: true));
+        Assert.Equal(requests, handler.Requests);
+        Assert.Null(edited.PhotoVersion);
+        handler.WishTitle = "Изменено у источника";
+        handler.PhotoUrl = "https://cdn.ohmywish.es/replacement.jpg";
+        handler.IncludeAnotherWish = true;
+
+        await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
+        db.ChangeTracker.Clear();
+        await sync.RunDue(default);
+        var result = await gifts.Mine(owner.Id);
+
+        Assert.Equal(2, result.Length);
+        var preserved = Assert.Single(result, gift => gift.Id == imported.Id);
+        Assert.Equal(edited.Details, preserved.Details);
+        Assert.Null(preserved.PhotoVersion);
+        Assert.True(Assert.Single(result, gift => gift.Details.Title == "Новое желание").FromOhmywishes);
     }
 }

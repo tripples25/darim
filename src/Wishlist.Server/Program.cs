@@ -32,6 +32,12 @@ builder.Services.AddHttpClient<OhmywishesMcp>(client=>client.Timeout=TimeSpan.Fr
 builder.Services.AddHttpClient<OhmywishesWeb>(client=>client.Timeout=TimeSpan.FromSeconds(15))
  .RemoveAllLoggers()
  .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
+builder.Services.AddHttpClient<OhmywishesReservations>(client => client.Timeout = TimeSpan.FromSeconds(8))
+ .RemoveAllLoggers()
+ .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddHttpClient<OhmywishesPhotos>()
+ .RemoveAllLoggers()
+ .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.AddSessions();builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(o=>{o.HeaderName="X-CSRF-TOKEN";o.Cookie.Name="wishlist.csrf";o.Cookie.SecurePolicy=builder.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;});
 builder.Services.AddOpenApi();builder.Services.AddDataProtection().SetApplicationName("wishlist");
@@ -130,6 +136,7 @@ if(demo)app.MapPost("/auth/demo/{index:int}",async(int index,HttpContext ctx,App
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method is not("GET" or "HEAD" or "OPTIONS")&&!ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase))await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 app.MapWishlistSharing(api);
+api.MapCardArtwork();
 static Guid UserId(HttpContext ctx)=>Guid.TryParse(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier),out var id)?id:throw new RuleException("Войдите снова.",401);
 app.MapGet(OhmywishesOptions.CallbackPath,async(HttpContext ctx,OhmywishesOAuth oauth,OhmywishesSync sync)=>{
  ctx.Response.Headers["Referrer-Policy"]="no-referrer";
@@ -176,10 +183,11 @@ api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,bool? r
  return returnCompany==true?Results.Ok(new CompanyJoinDto(id)):Results.NoContent();
 });
 api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses,input?.CompanyId));
-api.MapGet("/gifts",(HttpContext ctx,Guid? companyId,GiftService svc)=>svc.List(UserId(ctx),companyId));
+api.MapGet("/gifts", (HttpContext ctx, Guid? companyId, GiftService svc, bool includeMine = true) =>
+    svc.List(UserId(ctx), companyId, includeMine));
 api.MapGet("/gifts/mine",(HttpContext ctx,GiftService svc)=>svc.Mine(UserId(ctx)));
 api.MapGet("/gifts/giving",(HttpContext ctx,GiftService svc)=>svc.Giving(UserId(ctx)));
-api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input));
+api.MapPost("/gifts",(HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Create(UserId(ctx),input,ctx.RequestAborted));
 api.MapPut("/gifts/{id:guid}",(Guid id,HttpContext ctx,GiftWriteInput input,GiftService svc)=>svc.Change(UserId(ctx),id,input,ct:ctx.RequestAborted));
 api.MapPut("/gifts/{id:guid}/visibility",(Guid id,HttpContext ctx,GiftVisibility input,GiftService svc)=>svc.Change(UserId(ctx),id,visibility:input,ct:ctx.RequestAborted));
 api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,HttpContext ctx,GiftService svc)=>{
@@ -190,10 +198,34 @@ api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,H
 });
 api.MapPost("/gifts/{id:guid}/actions",(Guid id,HttpContext ctx,GiftActionInput input,GiftService svc)=>svc.Change(UserId(ctx),id,action:input,ct:ctx.RequestAborted));
 api.MapPost("/gifts/{id:guid}/archive",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:true,ct:ctx.RequestAborted));
+api.MapPost("/gifts/{id:guid}/restore",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:false,ct:ctx.RequestAborted));
 api.MapGet("/notices",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);return await db.Notices.Where(x=>x.UserId==id).OrderByDescending(x=>x.Created).Take(100).Select(x=>new NoticeDto(x.Id,x.Text,x.Created,x.Read)).ToArrayAsync();});
 api.MapPost("/notices/read",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);await db.Notices.Where(x=>x.UserId==id&&!x.Read).ExecuteUpdateAsync(s=>s.SetProperty(x=>x.Read,true));return Results.NoContent();});
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync("Cookies");return Results.NoContent();});
 app.MapOpenApi().RequireAuthorization();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "Darim API v1");
+        options.UseRequestInterceptor("""
+            (request) => {
+                const url = new URL(request.url, window.location.href);
+                const method = request.method?.toUpperCase() ?? "GET";
+                if (url.origin === window.location.origin && url.pathname.startsWith("/api/") &&
+                    !["GET", "HEAD", "OPTIONS"].includes(method)) {
+                    return fetch("/api/csrf").then(async (response) => {
+                        if (!response.ok) throw new Error("Войдите в Дарим и обновите Swagger UI.");
+                        const { token } = await response.json();
+                        request.headers["X-CSRF-TOKEN"] = token;
+                        return request;
+                    });
+                }
+                return request;
+            }
+            """);
+    });
+}
 app.MapStaticAssets();
 app.MapFallbackToFile("index.html");
 app.Run();

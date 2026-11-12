@@ -16,7 +16,8 @@ public static class AuthSetup {
   // OIDC sub identifies the subject at this client; Telegram profile id matches Mini App user.id.
   if(!long.TryParse(principal.FindFirst("id")?.Value,out var id)||id<=0)throw new RuleException("Invalid Telegram identity.",401);
   var name=principal.FindFirst("name")?.Value??"Участник";
-  return new(id,name[..Math.Min(name.Length,100)],principal.FindFirst("preferred_username")?.Value);
+  return new(id,name[..Math.Min(name.Length,100)],principal.FindFirst("preferred_username")?.Value,
+   principal.FindFirst("picture")?.Value);
  }
  public static bool TelegramConfigured(IConfiguration c)=>!string.IsNullOrWhiteSpace(c["Telegram:ClientId"])&&!string.IsNullOrWhiteSpace(c["Telegram:ClientSecret"]);
  public static ClaimsPrincipal Principal(AppUser u)=>new(new ClaimsIdentity([new(ClaimTypes.NameIdentifier,u.Id.ToString()),new(ClaimTypes.Name,u.Name)],"Cookies"));
