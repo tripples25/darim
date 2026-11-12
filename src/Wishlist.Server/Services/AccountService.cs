@@ -13,7 +13,7 @@ public class AccountService(AppDb db) {
   await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({identity.Id})");
   var user=await db.Users.SingleOrDefaultAsync(x=>x.TelegramId==identity.Id);
   if(user==null){user=new(){TelegramId=identity.Id,Name=identity.Name,Username=identity.Username};db.Users.Add(user);}else user.Username=identity.Username;
-  user.TelegramAvatarUrl=identity.AvatarUrl is {Length: <=2048} photo &&
+  if(identity.AvatarUrl!=null)user.TelegramAvatarUrl=identity.AvatarUrl is {Length: <=2048} photo &&
    Uri.TryCreate(photo,UriKind.Absolute,out var avatar) && avatar.Scheme==Uri.UriSchemeHttps &&
    string.IsNullOrEmpty(avatar.UserInfo) ? photo : null;
   await db.SaveChangesAsync();await tx.CommitAsync();return user;

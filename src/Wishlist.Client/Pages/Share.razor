@@ -56,9 +56,10 @@
    <p>«@selected.Details.Title»</p>
    @if(error!=null){<p class="error-box" role="alert">@error</p>}
    @if(!signedIn){
-    <p>Войдите через Telegram, чтобы отправить заявку и получать уведомления в «Дарим».</p>
+    <p>Войдите, чтобы отправить заявку и получать уведомления в «Дарим».</p>
     @if(info?.TelegramConfigured==true){<button type="button" class="primary-button full" @onclick="SignIn">Войти через Telegram</button>}
-    else{<p class="dialog-hint">Вход через Telegram сейчас недоступен.</p>}
+    else if(info?.CodeLoginEnabled!=true){<p class="dialog-hint">Вход через Telegram сейчас недоступен.</p>}
+    <CodeLogin Enabled="@(info?.CodeLoginEnabled==true)" BotUsername="@info?.BotUsername" OnSignedIn="CodeSignedIn" />
    }else{
     <form @onsubmit="SendRequest" @onsubmit:preventDefault>
      <p>Доступность подарка скрыта. Заявку можно отменить, пока она не подтверждена.</p>
@@ -111,6 +112,10 @@
  }
  async Task CloseRequest()=>await JS.InvokeVoidAsync("wishlist.closeDialog","public-request-dialog");
  void RequestClosed(){selected=null;error=null;}
+ async Task CodeSignedIn(){
+  signedIn=true;
+  requests=await Api.Get<WishlistRequestDto[]>("api/wishlist-requests");
+ }
  async Task SignIn(){
   if(selected==null)return;
   await JS.InvokeVoidAsync("wishlist.saveShareIntent",selected.Id);
