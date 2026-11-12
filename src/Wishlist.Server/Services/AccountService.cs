@@ -13,7 +13,7 @@ public class AccountService(AppDb db) {
   await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({identity.Id})");
   var user=await db.Users.SingleOrDefaultAsync(x=>x.TelegramId==identity.Id);
   if(user==null){user=new(){TelegramId=identity.Id,Name=identity.Name,Username=identity.Username};db.Users.Add(user);}else user.Username=identity.Username;
-  user.TelegramAvatarUrl=identity.AvatarUrl is {Length: <=2048} photo &&
+  if(identity.AvatarUrl!=null)user.TelegramAvatarUrl=identity.AvatarUrl is {Length: <=2048} photo &&
    Uri.TryCreate(photo,UriKind.Absolute,out var avatar) && avatar.Scheme==Uri.UriSchemeHttps &&
    string.IsNullOrEmpty(avatar.UserInfo) ? photo : null;
   await db.SaveChangesAsync();await tx.CommitAsync();return user;
@@ -97,3 +97,4 @@ public class AccountService(AppDb db) {
  public async Task Profile(Guid id,ProfileInput input){if(string.IsNullOrWhiteSpace(input.Name)||input.Name.Trim().Length>100||(input.Contact?.Length??0)>200)throw new RuleException("Проверьте имя и контакт (до 200 символов).",400);var u=await db.Users.SingleAsync(x=>x.Id==id);u.Name=input.Name.Trim();u.Contact=string.IsNullOrWhiteSpace(input.Contact)?null:input.Contact.Trim();await db.SaveChangesAsync();}
  async Task<AppUser> LockedUser(Guid id)=>await db.Users.FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"Id\"={id} FOR UPDATE").SingleAsync();
 }
+
