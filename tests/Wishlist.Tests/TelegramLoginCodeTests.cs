@@ -8,6 +8,10 @@ public class TelegramLoginCodeTests {
   Assert.Equal(user,store.Consume(code.ToLowerInvariant()));
   Assert.Throws<RuleException>(()=>store.Consume(code));
  }
+ [Fact] public void CooldownSurvivesRedemption(){
+  var store=new TelegramLoginCodes(TimeProvider.System);var code=store.Issue(user)!;
+  store.Consume(code);Assert.Null(store.Issue(user));
+ }
  [Fact] public void ReplacementInvalidatesPreviousCode() {
   var clock=new Clock();var store=new TelegramLoginCodes(clock);var first=store.Issue(user)!;
   Assert.Null(store.Issue(user));clock.Now=clock.Now.AddSeconds(31);
@@ -32,3 +36,4 @@ public class TelegramLoginCodeTests {
  }
  sealed class Clock:TimeProvider {public DateTimeOffset Now=DateTimeOffset.UtcNow;public override DateTimeOffset GetUtcNow()=>Now;}
 }
+
