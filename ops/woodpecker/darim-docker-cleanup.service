@@ -1,0 +1,10 @@
+[Unit]
+Description=Conservatively reclaim unused Darim CI build cache
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/darim/cache_maintenance.py
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=10min

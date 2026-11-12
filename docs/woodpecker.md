@@ -21,6 +21,36 @@ worker работает в privileged-контейнере. Непроверен
 получать privileged-доступ, volumes или секреты деплоя. Для автоматических
 тестов произвольных внешних PR нужен отдельный worker-хост.
 
+### Вместимость CI и обслуживание кеша
+
+Ежедневная задача `darim-docker-cleanup.timer` проверяет CI cache. Скрипт
+`ops/woodpecker/cache_maintenance.py` читает статусы Woodpecker из SQLite в
+режиме read-only и проверяет контейнеры вложенного Docker daemon. Любой активный,
+неизвестный или неудачно прочитанный статус останавливает обслуживание.
+Проверка и начало очистки защищены общим lock-файлом в `darim-ci_worker_socket`:
+шаг сборки берёт shared lock, а обслуживание — exclusive lock. Если pipeline уже
+активен, SQLite gate отменяет обслуживание; если он стартует после gate, его шаг
+ожидает освобождения lock.
+
+Скрипт не трогает образы, тома, Docker daemon production или журналы. При кеше не
+больше 6 ГБ и свободном root-диске не меньше 20% он ничего не меняет. Иначе он
+ограничивает кеш сборки бюджетом 6 ГБ, резервом 4 ГБ и целевыми 12 ГБ свободного
+места. Нынешний замер — 11.17 ГБ кеша и 27 ГБ свободного диска; очистка не
+запускалась, но следующий timer-run сократит кеш до бюджета. Это ограничение
+смягчает рост данных, но не заменяет отдельный runner: worker и production всё
+ещё используют один диск.
+
+Для установки скрипт копируется в `/usr/local/lib/darim/cache_maintenance.py`,
+а unit-файлы `darim-docker-cleanup.service` и `.timer` — в
+`/etc/systemd/system/`; затем timer перечитывается и включается штатным systemd.
+Сначала следует сверить текущую конфигурацию и установить Python 3, Docker CLI,
+volume `darim-ci_worker_data` и путь к SQLite `darim-ci_server_data`. Lock-файл
+`cache-maintenance.lock` надо заранее создать в volume `darim-ci_worker_socket`
+и примонтировать к шагу `tests-and-build`, как в `.woodpecker.yaml`. На VPS его
+нужно создать обычным файлом по пути `<worker_socket volume mountpoint>/cache-maintenance.lock`
+до включения этой CI-конфигурации. Шаг проверяет файл через `test -f`. Скрипт
+намеренно завершится без очистки, если lock-файл или база недоступны.
+
 Порты 80/443 и HTTPS обслуживает встроенный Caddy в Coolify. Панель доступна
 на coolify.hype-ny.ru. Маршруты CI и Darim хранятся в Dynamic Configurations
 прокси Coolify (routes.caddy). Сеть darim-edge внешняя для Woodpecker:
