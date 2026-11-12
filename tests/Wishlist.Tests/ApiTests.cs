@@ -358,6 +358,37 @@ public class ApiTests(PostgresFixture db) {
  }
 
  [Fact]
+ public async Task OwnerCanRestoreArchivedGiftWithoutLosingReservation()
+ {
+  var seed=await Seed();
+  using var app=Factory();
+  using var client=app.CreateClient();
+  var giftPath=$"/api/gifts/{seed.gift}";
+
+  Bearer(client,seed.donor);
+  (await client.PostAsJsonAsync($"{giftPath}/actions",new GiftActionInput("reserve"))).EnsureSuccessStatusCode();
+  Bearer(client,seed.owner);
+  (await client.PostAsync($"{giftPath}/archive",null)).EnsureSuccessStatusCode();
+
+  Bearer(client,seed.donor);
+  using var denied=await client.PostAsync($"{giftPath}/restore",null);
+  Assert.Equal(HttpStatusCode.NotFound,denied.StatusCode);
+  var archived=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  Assert.True(archived.Archived);
+
+  Bearer(client,seed.owner);
+  using var response=await client.PostAsync($"{giftPath}/restore",null);
+  response.EnsureSuccessStatusCode();
+  Assert.False((await response.Content.ReadFromJsonAsync<GiftDto>())!.Archived);
+
+  Bearer(client,seed.donor);
+  var restored=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  Assert.Equal(seed.gift,restored.Id);
+  Assert.False(restored.Archived);
+  Assert.True(restored.Participation!.IsMine);
+ }
+
+ [Fact]
  public async Task LargeUploadIsStoredSmallerWithProportionsAndTransparencyIntact()
  {
   var seed=await Seed();

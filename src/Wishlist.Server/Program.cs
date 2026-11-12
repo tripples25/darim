@@ -182,6 +182,7 @@ api.MapGet("/gifts/{id:guid}/photo/{version:guid}",async (Guid id,Guid version,H
 });
 api.MapPost("/gifts/{id:guid}/actions",(Guid id,HttpContext ctx,GiftActionInput input,GiftService svc)=>svc.Change(UserId(ctx),id,action:input,ct:ctx.RequestAborted));
 api.MapPost("/gifts/{id:guid}/archive",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:true,ct:ctx.RequestAborted));
+api.MapPost("/gifts/{id:guid}/restore",(Guid id,HttpContext ctx,GiftService svc)=>svc.Change(UserId(ctx),id,archive:false,ct:ctx.RequestAborted));
 api.MapGet("/notices",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);return await db.Notices.Where(x=>x.UserId==id).OrderByDescending(x=>x.Created).Take(100).Select(x=>new NoticeDto(x.Id,x.Text,x.Created,x.Read)).ToArrayAsync();});
 api.MapPost("/notices/read",async(HttpContext ctx,AppDb db)=>{var id=UserId(ctx);await db.Notices.Where(x=>x.UserId==id&&!x.Read).ExecuteUpdateAsync(s=>s.SetProperty(x=>x.Read,true));return Results.NoContent();});
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync("Cookies");return Results.NoContent();});
