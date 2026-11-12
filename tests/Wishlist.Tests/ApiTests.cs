@@ -470,7 +470,6 @@ public class ApiTests(PostgresFixture db) {
   using var app = Factory(artworkManagerIds: anotherTelegramId.ToString());
   using var client = app.CreateClient();
   Bearer(client, s.owner);
-
   var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
   Assert.False(manifest.GetProperty("canManage").GetBoolean());
   using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
@@ -490,7 +489,6 @@ public class ApiTests(PostgresFixture db) {
   using var app = Factory(artworkManagerIds: s.owner.TelegramId.ToString());
   using var client = app.CreateClient();
   Bearer(client, s.owner);
-
   var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
   Assert.True(manifest.GetProperty("canManage").GetBoolean());
   using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
@@ -510,14 +508,66 @@ public class ApiTests(PostgresFixture db) {
   using var app = Factory();
   using var client = app.CreateClient();
   Bearer(client, s.owner);
-
   var manifest = await client.GetFromJsonAsync<JsonElement>("/api/card-artwork");
   Assert.False(manifest.GetProperty("canManage").GetBoolean());
   using var delete = await client.DeleteAsync($"/api/card-artwork/{Guid.NewGuid()}");
   Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
  }
 
- WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null)=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Demo:Enabled","false");b.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");});
+ [Fact]
+ public async Task UnknownApiGetReturnsJsonNotFoundAndStillRequiresAuthentication()
+ {
+  var seed = await Seed();
+  using var app = Factory();
+  using var anonymous = app.CreateClient();
+  Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/not-a-route")).StatusCode);
+  using var client = app.CreateClient();
+  Bearer(client, seed.owner);
+  using var response = await client.GetAsync("/api/not-a-route");
+  Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+  Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+  Assert.Equal(404, (await response.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>())!.Status);
+ }
+
+ [Fact]
+ public async Task UnknownApiPostReturnsJsonNotFound()
+ {
+  var seed = await Seed();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, seed.owner);
+  using var response = await client.PostAsJsonAsync("/api/not-a-route", new { value = "test" });
+  Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+  Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+ }
+
+ [Fact]
+ public async Task UnknownAuthRouteReturnsJsonNotFoundWhileUiRoutesKeepSpaFallback()
+ {
+  using var app = Factory();
+  using var client = app.CreateClient();
+  using var authResponse = await client.GetAsync("/auth/not-a-route");
+  Assert.Equal(HttpStatusCode.NotFound, authResponse.StatusCode);
+  Assert.Equal("application/problem+json", authResponse.Content.Headers.ContentType?.MediaType);
+  using var loginResponse = await client.GetAsync("/auth/login");
+  Assert.Equal(HttpStatusCode.ServiceUnavailable, loginResponse.StatusCode);
+  Assert.Equal("application/problem+json", loginResponse.Content.Headers.ContentType?.MediaType);
+  using var uiResponse = await client.GetAsync("/wishlist/friends");
+  Assert.Equal(HttpStatusCode.OK, uiResponse.StatusCode);
+  Assert.Equal("text/html", uiResponse.Content.Headers.ContentType?.MediaType);
+ }
+
+ [Fact]
+ public async Task ConfiguredOidcCallbackIsHandledByAuthenticationMiddlewareBeforeAuthFallback()
+ {
+  using var app = Factory(telegramClientId: "test-client", telegramClientSecret: "test-secret");
+  using var client = app.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+  using var response = await client.GetAsync("/auth/callback?error=access_denied&state=invalid");
+  Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+  Assert.Equal("/?login=failed", response.Headers.Location?.OriginalString);
+ }
+
+ WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null, string? telegramClientId=null, string? telegramClientSecret=null)=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Telegram:ClientId",telegramClientId);b.UseSetting("Telegram:ClientSecret",telegramClientSecret);b.UseSetting("Demo:Enabled","false");b.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}

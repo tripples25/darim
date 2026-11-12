@@ -211,6 +211,10 @@ if (app.Environment.IsDevelopment())
     });
 }
 app.MapStaticAssets();
+app.MapFallback("/api/{**path}", () => Results.Problem(statusCode: StatusCodes.Status404NotFound))
+    .RequireAuthorization();
+// The OIDC middleware handles /auth/callback before endpoint execution; unmatched auth paths reach this JSON fallback.
+app.MapFallback("/auth/{**path}", () => Results.Problem(statusCode: StatusCodes.Status404NotFound));
 app.MapFallbackToFile("index.html");
 app.Run();
 public partial class Program { }
