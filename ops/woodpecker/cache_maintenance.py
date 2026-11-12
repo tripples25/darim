@@ -25,7 +25,7 @@ def count_active_pipelines(database: Path = WOODPECKER_DB) -> int:
     with closing(sqlite3.connect(uri, uri=True, timeout=5)) as connection:
         row = connection.execute(
             "SELECT COUNT(*) FROM pipelines "
-            "WHERE status NOT IN ('success', 'failure', 'error', 'killed', 'declined')"
+            "WHERE status NOT IN ('success', 'failure', 'error', 'killed', 'declined', 'canceled')"
         ).fetchone()
     if row is None:
         raise RuntimeError("Could not read Woodpecker pipeline status")

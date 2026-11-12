@@ -27,7 +27,7 @@ class CacheMaintenanceTests(unittest.TestCase):
         return temporary, path
 
     def test_successful_and_failed_pipelines_are_terminal(self):
-        temporary, path = self.create_database(['success', 'failure', 'killed'])
+        temporary, path = self.create_database(['success', 'failure', 'killed', 'canceled'])
         with temporary:
             self.assertEqual(0, cache_maintenance.count_active_pipelines(path))
 
