@@ -15,6 +15,11 @@ var builder=WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDb>(o=>o.UseNpgsql(builder.Configuration.GetConnectionString("Database")??throw new InvalidOperationException("Set ConnectionStrings__Database.")));
 builder.Services.AddScoped<GiftService>();builder.Services.AddScoped<AccountService>();
 builder.Services.AddSingleton<DarimMetrics>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<TelegramLoginCodes>();
+if(!builder.Environment.IsEnvironment("Testing"))builder.Services.AddHostedService<TelegramLoginBot>();
+builder.Services.AddHttpClient("telegram-login",client=>client.Timeout=TimeSpan.FromSeconds(40)).RemoveAllLoggers()
+ .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.Services.AddSingleton<OhmywishesOptions>();
 builder.Services.AddScoped<OhmywishesSync>();
 builder.Services.AddHostedService<OhmywishesWorker>();
@@ -102,8 +107,19 @@ app.Use(async(ctx,next)=>{
 if(!app.Environment.IsDevelopment())app.UseHsts();
 app.UseStaticFiles();app.UseRateLimiter();app.UseAuthentication();app.UseAuthorization();
 app.MapGet("/health",async(AppDb db)=>await db.Database.CanConnectAsync()?Results.Ok(new{status="ok"}):Results.StatusCode(503));
-app.MapGet("/api/auth-info",()=>new AuthInfoDto(AuthSetup.TelegramConfigured(app.Configuration),demo,app.Configuration["Telegram:BotUsername"]));
+app.MapGet("/api/auth-info",()=>new AuthInfoDto(AuthSetup.TelegramConfigured(app.Configuration),demo,app.Configuration["Telegram:BotUsername"],app.Configuration.GetValue<bool>("Telegram:CodeLoginEnabled")&&!string.IsNullOrWhiteSpace(app.Configuration["Telegram:BotToken"])));
 app.MapGet("/auth/login",(string? returnTo)=>AuthSetup.TelegramConfigured(app.Configuration)?Results.Challenge(new AuthenticationProperties{RedirectUri=returnTo=="share"?"/share":"/"},["Telegram"]):Results.Problem("Настройте Telegram-вход.",statusCode:503)).RequireRateLimiting("auth");
+app.MapPost("/auth/code",async(CodeLoginInput input,HttpContext ctx,TelegramLoginCodes codes,AccountService accounts)=>{
+ if(!app.Configuration.GetValue<bool>("Telegram:CodeLoginEnabled")||string.IsNullOrWhiteSpace(app.Configuration["Telegram:BotToken"]))return Results.StatusCode(503);
+ // Login CSRF: only the site's own browser may establish a cookie session.
+ if(!Uri.TryCreate(ctx.Request.Headers.Origin.ToString(),UriKind.Absolute,out var origin)
+  ||origin.GetLeftPart(UriPartial.Authority)!=$"{ctx.Request.Scheme}://{ctx.Request.Host}"
+  ||ctx.Request.Headers["Sec-Fetch-Site"]=="cross-site")return Results.BadRequest();
+ var identity=codes.Consume(input.Code);
+ var user=await accounts.Login(identity);
+ await ctx.SignInAsync("Cookies",AuthSetup.Principal(user));
+ return Results.Ok();
+}).RequireRateLimiting("auth");
 app.MapPost("/auth/mini",async(MiniLoginInput input,AccountService accounts)=>{
  var identity=TelegramInitData.Validate(input.InitData,app.Configuration["Telegram:BotToken"]??"",DateTimeOffset.UtcNow);
  var u=await accounts.Login(identity);return AuthSetup.MiniToken(u,app.Configuration);
@@ -182,3 +198,4 @@ app.MapStaticAssets();
 app.MapFallbackToFile("index.html");
 app.Run();
 public partial class Program { }
+

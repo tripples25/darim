@@ -1,0 +1,27 @@
+@inject Api Api
+
+@if(Enabled){
+ <details class="code-login">
+  <summary>Войти по коду</summary>
+  <p class="dialog-hint">Отправьте <strong>/login</strong> боту @if(!string.IsNullOrWhiteSpace(BotUsername)){<a href="@BotLink" target="_blank" rel="noopener noreferrer">@@@BotUsername</a>}else{<text>«Дарим»</text>} в личном сообщении. Введите полученный код — он действует 5 минут. Подходит и для первого входа.</p>
+  <form @onsubmit="SignIn" @onsubmit:preventDefault>
+   <label>Код из Telegram<input @bind="code" @bind:event="oninput" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" maxlength="12" minlength="12" required disabled="@busy" /></label>
+   @if(error!=null){<p class="error-box" role="alert">@error</p>}
+   <button type="submit" class="primary-button" disabled="@(busy||code.Trim().Length!=12)">@(busy?"Входим…":"Войти")</button>
+  </form>
+ </details>
+}
+
+@code {
+ [Parameter] public bool Enabled {get;set;}
+ [Parameter] public string? BotUsername {get;set;}
+ [Parameter] public EventCallback OnSignedIn {get;set;}
+ string code="";string? error;bool busy;
+ string BotLink=>"https://t.me/"+Uri.EscapeDataString(BotUsername?.TrimStart('@')??"");
+ async Task SignIn(){
+  if(busy)return;busy=true;error=null;
+  try{await Api.Change("auth/code",new CodeLoginInput(code.Trim()));Api.Clear();code="";await OnSignedIn.InvokeAsync();}
+  catch(Exception ex)when(ex is ApiException or HttpRequestException){error=ex.Message;}
+  finally{busy=false;}
+ }
+}

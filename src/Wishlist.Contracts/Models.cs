@@ -30,4 +30,7 @@ public record GiftActionInput(string Action, int? Slots = null, Guid? UserId = n
 public record MiniLoginInput(string InitData);
 public record MiniSessionDto(string Token, DateTimeOffset Expires);
 public record CsrfDto(string Token);
-public record AuthInfoDto(bool TelegramConfigured, bool DemoEnabled, string? BotUsername = null);
+public record AuthInfoDto(bool TelegramConfigured, bool DemoEnabled, string? BotUsername = null, bool CodeLoginEnabled = false);
+
+public record CodeLoginInput(string? Code);
+
