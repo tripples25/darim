@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 namespace Wishlist.Core;
-public record TelegramIdentity(long Id,string Name,string? Username);
+public record TelegramIdentity(long Id,string Name,string? Username,string? AvatarUrl=null);
 public static class TelegramInitData {
  public static TelegramIdentity Validate(string input,string botToken,DateTimeOffset now) {
   try {
@@ -21,7 +21,8 @@ public static class TelegramInitData {
    var id=root.GetProperty("id").GetInt64();var name=root.GetProperty("first_name").GetString();
    if(id<=0 || string.IsNullOrWhiteSpace(name))throw new FormatException();
    var username=root.TryGetProperty("username",out var un)?un.GetString():null;
-   return new(id,name[..Math.Min(name.Length,100)],username);
+   var avatar=root.TryGetProperty("photo_url",out var photo)&&photo.ValueKind==JsonValueKind.String?photo.GetString():null;
+   return new(id,name[..Math.Min(name.Length,100)],username,avatar);
   }catch(Exception e)when(e is FormatException or KeyNotFoundException or JsonException or InvalidOperationException or ArgumentException or OverflowException){throw new RuleException("Недействительные или просроченные данные Telegram. Откройте приложение заново.",401);}
  }
 }

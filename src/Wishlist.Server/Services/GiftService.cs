@@ -267,6 +267,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
     {
         var ids = gifts.SelectMany(g => g.Donors().Append(g.OwnerId)).Distinct().ToArray();
         return db.Users.Where(x => ids.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, x => new PersonDto(x.Id, x.Name, x.Contact ?? (x.Username != null ? "@" + x.Username : null)));
+            .ToDictionaryAsync(x => x.Id, x => new PersonDto(x.Id, x.Name,
+                x.Contact ?? (x.Username != null ? "@" + x.Username : null), x.TelegramAvatarUrl));
     }
 }
