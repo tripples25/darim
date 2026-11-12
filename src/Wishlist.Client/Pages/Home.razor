@@ -13,7 +13,7 @@ else if(me==null){
   <div class="welcome-grid"><div><span class="eyebrow">ДЛЯ ВАШИХ БЛИЗКИХ ЛЮДЕЙ</span><h1>Меньше догадок.<br />Больше <em>радости.</em></h1><p>Все желания вашей компании в одном месте. Выбирайте подарки, дарите вместе и сохраняйте сюрприз.</p>
   @if(!string.IsNullOrEmpty(error)){<div class="error-box" role="alert">@error</div>}
   @if(info?.TelegramConfigured==true){<a class="primary-button login-button" href="/auth/login"><MudIcon Icon="@Icons.Material.Filled.Send" /> Войти через Telegram</a>}
-  else{<p class="quiet-note">Telegram-вход появится после настройки бота и домена.</p>}
+  else if(info?.CodeLoginEnabled!=true){<p class="quiet-note">Telegram-вход появится после настройки бота и домена.</p>}
   <CodeLogin Enabled="@(info?.CodeLoginEnabled==true)" BotUsername="@info?.BotUsername" OnSignedIn="Initialize" />
   @if(info?.DemoEnabled==true){<div class="demo-panel"><span>Попробовать в деморежиме</span><div>@for(var i=0;i<demoNames.Length;i++){var index=i;<button class="soft-button" disabled="@busy" @onclick="()=>DemoLogin(index)">@demoNames[i]</button>}</div><small>Только для локальной разработки</small></div>}
   <div class="welcome-points"><span>✓ Скрытая бронь</span><span>✓ Равные доли</span><span>✓ В браузере и Telegram</span></div>
@@ -338,4 +338,5 @@ else{
   <label><input type="radio" name="wish-visibility" value="all" checked="@(visibilityMode=="all")" @onchange='()=>visibilityMode="all"' /> Все мои компании, включая будущие</label>
  </fieldset>;
 }
+
 

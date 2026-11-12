@@ -464,14 +464,15 @@ public class ApiTests(PostgresFixture db) {
   using var app=Factory().WithWebHostBuilder(b=>b.UseSetting("Telegram:CodeLoginEnabled","true"));
   using var client=app.CreateClient(new WebApplicationFactoryClientOptions{BaseAddress=new Uri("https://localhost")});
   var telegramId=Random.Shared.NextInt64(1,long.MaxValue);Guid? original=null;
-  if(existing){using var scope=app.Services.CreateScope();original=(await scope.ServiceProvider.GetRequiredService<AccountService>().Login(new(telegramId,"Юлия","julia"))).Id;}
+  if(existing){using var scope=app.Services.CreateScope();original=(await scope.ServiceProvider.GetRequiredService<AccountService>().Login(new(telegramId,"Юлия","julia","https://cdn4.telesco.pe/file/retained-avatar.jpg"))).Id;}
   var codes=app.Services.GetRequiredService<TelegramLoginCodes>();var code=codes.Issue(new(telegramId,"Юлия","julia"));
+  Assert.Equal(HttpStatusCode.BadRequest,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
   client.DefaultRequestHeaders.Add("Origin","https://evil.example");
   Assert.Equal(HttpStatusCode.BadRequest,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
   client.DefaultRequestHeaders.Remove("Origin");client.DefaultRequestHeaders.Add("Origin","https://localhost");
   Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
   var me=await client.GetFromJsonAsync<MeDto>("/api/me");Assert.Equal("Юлия",me!.User.Name);
-  if(existing)Assert.Equal(original,me.User.Id);
+  if(existing){Assert.Equal(original,me.User.Id);using var scope=app.Services.CreateScope();var saved=await scope.ServiceProvider.GetRequiredService<AppDb>().Users.FindAsync(original);Assert.Equal("https://cdn4.telesco.pe/file/retained-avatar.jpg",saved!.TelegramAvatarUrl);}
   Assert.Equal(HttpStatusCode.Unauthorized,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
  }
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}
@@ -515,4 +516,5 @@ public class ApiTests(PostgresFixture db) {
   var newUser=new AppUser{Name="Новый",TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};using(var ctx=new AppDb(db.Options)){ctx.Users.Add(newUser);await ctx.SaveChangesAsync();}Bearer(client,newUser);Assert.Equal(HttpStatusCode.NoContent,(await client.PostAsJsonAsync("/api/company/join",new JoinCompanyInput(invite!.Token))).StatusCode);var me=await client.GetFromJsonAsync<MeDto>("/api/me");Assert.Equal(s.owner.CompanyId,me!.Company!.Id);Assert.All(me.Company.Members,x=>Assert.Null(x.Contact));
  }
 }
+
 

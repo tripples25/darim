@@ -58,7 +58,7 @@
    @if(!signedIn){
     <p>Войдите, чтобы отправить заявку и получать уведомления в «Дарим».</p>
     @if(info?.TelegramConfigured==true){<button type="button" class="primary-button full" @onclick="SignIn">Войти через Telegram</button>}
-    else{<p class="dialog-hint">Вход через Telegram сейчас недоступен.</p>}
+    else if(info?.CodeLoginEnabled!=true){<p class="dialog-hint">Вход через Telegram сейчас недоступен.</p>}
     <CodeLogin Enabled="@(info?.CodeLoginEnabled==true)" BotUsername="@info?.BotUsername" OnSignedIn="CodeSignedIn" />
    }else{
     <form @onsubmit="SendRequest" @onsubmit:preventDefault>
@@ -137,4 +137,5 @@
   finally{busy=false;}
  }
 }
+
 

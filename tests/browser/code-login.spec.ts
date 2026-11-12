@@ -19,3 +19,17 @@ test('code login stays on the site and allows retry after a bad code', async ({ 
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.screenshot({path:'artifacts/code-login-mobile.png',fullPage:true});
 });
+
+test('successful code login restores the site session without navigation', async ({ page }) => {
+ await page.route('**/api/auth-info', route => route.fulfill({json:{telegramConfigured:false,demoEnabled:false,botUsername:'darim_test_bot',codeLoginEnabled:true}}));
+ // The production code verification is covered by API tests; establish a test cookie here.
+ await page.route('**/auth/code', async route => {
+  const session=await page.request.post('/auth/demo/0');expect(session.ok()).toBeTruthy();
+  await route.fulfill({status:200,body:''});
+ });
+ await page.goto('/');await page.getByText('Войти по коду',{exact:true}).click();
+ await page.getByLabel('Код из Telegram').fill('abcdef123456');
+ await page.getByRole('button',{name:'Войти',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Все желания',exact:true})).toBeVisible();
+ await expect(page).toHaveURL(/\/$/);
+});
