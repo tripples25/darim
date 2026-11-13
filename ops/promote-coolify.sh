@@ -72,7 +72,7 @@ fi
 
 for ((attempt=1; attempt<=60; attempt++)); do
   if [[ $(docker inspect -f '{{.Image}} {{.State.Running}}' "$app" 2>/dev/null || true) == "$expected true" &&
-        $(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$migrate" 2>/dev/null || true) == 'exited 0' ]] &&
+        $(docker inspect -f '{{.Image}} {{.State.Status}} {{.State.ExitCode}}' "$migrate" 2>/dev/null || true) == "$expected exited 0" ]] &&
         curl -fsS --max-time 5 https://wishes.hype-ny.ru/health | grep -q '"status":"ok"'; then
     marker=$(mktemp "$root/.coolify-release.XXXXXXXX")
     printf '%s-%s\n' "$sha" "$pipeline" > "$marker"
