@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Wishlist.Contracts;
 
 namespace Wishlist.Tests;
 
@@ -34,7 +36,7 @@ public class MetricsTests
         client.DefaultRequestHeaders.Authorization = null;
 
         var giftId = Guid.NewGuid();
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync($"/api/gifts/{giftId}/actions?key=private-query", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync($"/api/gifts/{giftId}/actions?key=private-query", new GiftActionInput("reserve"))).StatusCode);
         using var unmatched = new HttpRequestMessage(new HttpMethod("CUSTOM"), "/api/private-path");
         await client.SendAsync(unmatched);
 
@@ -46,7 +48,7 @@ public class MetricsTests
         var metrics = await response.Content.ReadAsStringAsync();
         Assert.Contains("darim_http_requests_total{method=\"POST\",route=\"/api/gifts/{id:guid}/actions\",status_class=\"4xx\"} 1", metrics);
         Assert.Contains("darim_http_request_duration_seconds_count{method=\"POST\",route=\"/api/gifts/{id:guid}/actions\"} 1", metrics);
-        Assert.Contains("method=\"OTHER\",route=\"<unmatched>\"", metrics);
+        Assert.Contains("method=\"OTHER\",route=\"/api/{**path}\"", metrics);
         Assert.Contains("darim_ohmywishes_sync_total", metrics);
         Assert.DoesNotContain(giftId.ToString(), metrics);
         Assert.DoesNotContain("private-query", metrics);
