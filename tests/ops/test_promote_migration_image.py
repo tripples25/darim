@@ -7,6 +7,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = 'sha256:' + 'a' * 64
 STALE = 'sha256:' + 'c' * 64
+TOKEN = 'migration-test-token'
+UUID = 'a' * 24
 
 
 class PromoteMigrationImageTests(unittest.TestCase):
@@ -18,7 +20,6 @@ class PromoteMigrationImageTests(unittest.TestCase):
             (root / 'app').mkdir()
             script = root / 'promote-coolify.sh'
             source = (ROOT / 'ops/promote-coolify.sh').read_text()
-            source = source.replace('root=/opt/darim', f'root={root / "app"}')
             source = source.replace('attempt<=60', 'attempt<=2')
             script.write_text(source)
             docker = fake_bin / 'docker'
@@ -39,14 +40,34 @@ elif a[0] == 'exec' and 'coolify' in a:
 ''')
             docker.chmod(0o755)
             curl = fake_bin / 'curl'
-            curl.write_text('#!/bin/sh\nprintf \'{"status":"ok"}\\n\'\n')
+            curl.write_text('''#!/usr/bin/env python3
+import os,sys
+a=sys.argv[1:]
+url=a[-1]
+if url.endswith('/health'):
+    print('{"status":"ok"}')
+    raise SystemExit(0)
+def arg(name): return a[a.index(name)+1]
+method=arg('--request')
+if method == 'PATCH':
+    open(arg('--output'),'w').write('[{"key":"DARIM_IMAGE"}]')
+    sys.stdout.write('201')
+else:
+    open(arg('--output'),'w').write('{"message":"starting"}')
+    sys.stdout.write('200')
+''')
             curl.chmod(0o755)
             sleep = fake_bin / 'sleep'
             sleep.write_text('#!/bin/sh\nexit 0\n')
             sleep.chmod(0o755)
+            token_file = root / 'coolify-token'
+            token_file.write_text(TOKEN)
+            token_file.chmod(0o600)
             env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ['PATH'],
-                       EXPECTED_IMAGE=EXPECTED, MIGRATION_IMAGE=migration_image)
-            return subprocess.run(['bash', str(script), 'a' * 24, 'b' * 40, '42', 'darim:test'],
+                       EXPECTED_IMAGE=EXPECTED, MIGRATION_IMAGE=migration_image,
+                       DARIM_PROMOTE_ROOT=str(root / 'app'),
+                       DARIM_COOLIFY_TOKEN_FILE=str(token_file))
+            return subprocess.run(['bash', str(script), UUID, 'b' * 40, '42', 'darim:test'],
                                   env=env, capture_output=True, text=True)
 
     def test_current_release_migration_container_can_succeed(self):

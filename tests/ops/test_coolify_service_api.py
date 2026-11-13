@@ -72,7 +72,7 @@ elif a[0] == 'inspect' and len(a) >= 4 and a[1] == '-f':
     if 'Health.Status' in template: print('healthy')
     elif 'Mounts' in template: print('darim_postgres')
     elif 'State.Running' in template: print(os.environ['MOCK_IMAGE_ID'] + ' true')
-    elif 'State.Status' in template: print('exited 0')
+    elif 'State.Status' in template: print(os.environ['MOCK_MIGRATION_IMAGE'] + ' exited 0')
 elif a[0] == 'exec' and any('pg_dump' in value for value in a):
     print('mock database backup')
 ''')
@@ -85,6 +85,7 @@ elif a[0] == 'exec' and any('pg_dump' in value for value in a):
         env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                    MOCK_API_LOG=str(self.api_log), MOCK_DOCKER_LOG=str(self.docker_log),
                    MOCK_TOKEN=TOKEN, MOCK_IMAGE_ID=IMAGE_ID,
+                   MOCK_MIGRATION_IMAGE=IMAGE_ID,
                    DARIM_PROMOTE_ROOT=str(self.app_root),
                    DARIM_COOLIFY_TOKEN_FILE=str(self.token_file))
         env.update({key: str(value) for key, value in overrides.items()})
@@ -143,6 +144,13 @@ elif a[0] == 'exec' and any('pg_dump' in value for value in a):
         self.assertEqual(['PATCH', 'POST'], [call['method'] for call in self.api_calls()])
         self.assertFalse((self.app_root / 'current-coolify-release').exists())
         self.assertNotIn('private-response-body', result.stdout + result.stderr)
+
+    def test_stale_successful_migration_image_is_not_marked_as_released(self):
+        stale_image_id = 'sha256:' + 'e' * 64
+        result = self.run_promote(MOCK_MIGRATION_IMAGE=stale_image_id)
+        self.assertEqual(20, result.returncode, result.stderr)
+        self.assertEqual(['PATCH', 'POST'], [call['method'] for call in self.api_calls()])
+        self.assertFalse((self.app_root / 'current-coolify-release').exists())
 
     def test_group_readable_token_file_is_rejected_before_api_call(self):
         self.token_file.chmod(0o640)
