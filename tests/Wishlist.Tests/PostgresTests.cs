@@ -53,7 +53,7 @@ public class PostgresTests(PostgresFixture fixture) {
   Assert.False(gift.Unlimited);
   Assert.Equal("solo", gift.Mode);
   Assert.Equal<Guid?>(s.a, gift.DonorId);
-  Assert.Single(gift.Shares);
+  Assert.Empty(gift.Shares);
   Assert.Equal("solo", Assert.Single(await new GiftService(read).Giving(s.a)).Participation?.Mode);
  }
 
