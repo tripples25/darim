@@ -8,7 +8,6 @@ namespace Wishlist.Server.Services;
 
 internal static class CardArtworkEndpoints
 {
-    private const string ManagerUsername = "sharphurt";
     private const int MaxBytes = 5 * 1024 * 1024;
     private const int MaxPixels = 4096 * 4096;
     private static readonly SemaphoreSlim DecodeSlot = new(1);
@@ -79,10 +78,22 @@ internal static class CardArtworkEndpoints
         if (!Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
             return false;
 
-        // AccountService sets Username from verified Telegram login, independently of the editable profile.
-        var matches = await db.Users.Where(user => user.Username != null && user.Username.ToLower() == ManagerUsername)
-            .Select(user => user.Id).Take(2).ToArrayAsync(ct);
-        return matches.Length == 1 && matches[0] == userId;
+        var configuredIds = context.RequestServices.GetRequiredService<IConfiguration>()
+            ["CardArtwork:ManagerTelegramIds"];
+        if (string.IsNullOrWhiteSpace(configuredIds))
+            return false;
+
+        var managerIds = configuredIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => long.TryParse(value, out var id) && id > 0 ? id : (long?)null)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToHashSet();
+        if (managerIds.Count == 0)
+            return false;
+
+        var telegramId = await db.Users.Where(user => user.Id == userId)
+            .Select(user => (long?)user.TelegramId).SingleOrDefaultAsync(ct);
+        return telegramId.HasValue && managerIds.Contains(telegramId.Value);
     }
 
     private static async Task<byte[]> ReadPng(HttpRequest request, CancellationToken ct)

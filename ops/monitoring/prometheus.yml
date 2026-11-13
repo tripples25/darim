@@ -17,3 +17,6 @@ scrape_configs:
       credentials_file: /run/secrets/scrape_token
     file_sd_configs:
       - files: [/etc/prometheus/targets.yml]
+  - job_name: darim-system
+    static_configs:
+      - targets: ['172.28.45.1:9100']

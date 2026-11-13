@@ -1,8 +1,14 @@
+x-rotated-logging: &rotated-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
   server:
     image: woodpeckerci/woodpecker-server:v3.20.1
     pull_policy: never
     restart: unless-stopped
+    logging: *rotated-logging
     environment:
       WOODPECKER_HOST: https://ci.hype-ny.ru
       WOODPECKER_OPEN: 'false'
@@ -24,7 +30,8 @@ services:
     pull_policy: never
     restart: unless-stopped
     privileged: true
-    command: [dockerd, '--host=unix:///run/ci/docker.sock']
+    command: [dockerd, '--host=unix:///run/ci/docker.sock', '--log-driver=json-file', '--log-opt=max-size=10m', '--log-opt=max-file=3']
+    logging: *rotated-logging
     environment:
       DOCKER_TLS_CERTDIR: ''
     mem_limit: 3g
@@ -37,6 +44,7 @@ services:
     pull_policy: never
     restart: unless-stopped
     command: agent
+    logging: *rotated-logging
     depends_on: [server, worker-docker]
     environment:
       WOODPECKER_SERVER: server:9000
@@ -49,6 +57,7 @@ services:
   registry:
     image: registry:3
     restart: unless-stopped
+    logging: *rotated-logging
     network_mode: service:worker-docker
     depends_on:
       worker-docker:

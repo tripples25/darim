@@ -8,8 +8,11 @@ steps:
     image: docker:27-cli
     volumes:
       - /run/ci/docker.sock:/var/run/docker.sock
+      - /run/ci/cache-maintenance.lock:/run/ci/cache-maintenance.lock
     commands:
-      - sh ops/woodpecker-build.sh
+      - test -f /run/ci/cache-maintenance.lock
+      - apk add --no-cache util-linux
+      - flock -s /run/ci/cache-maintenance.lock sh ops/woodpecker-build.sh
 
   - name: publish-verified-image
     image: docker:27-cli

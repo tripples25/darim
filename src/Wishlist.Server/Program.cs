@@ -57,6 +57,7 @@ if (args.Contains("--migrate"))
 var demo=app.Environment.IsDevelopment()&&app.Configuration.GetValue<bool>("Demo:Enabled");
 if(demo){await using var scope=app.Services.CreateAsyncScope();var db=scope.ServiceProvider.GetRequiredService<AppDb>();await db.Database.MigrateAsync();await DemoData.Seed(db);}
 app.UseForwardedHeaders();
+app.UseRouting();
 var metrics = app.Services.GetRequiredService<DarimMetrics>();
 var requestLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Darim.Http");
 app.Use(async (context, next) =>
@@ -226,7 +227,44 @@ if (app.Environment.IsDevelopment())
             """);
     });
 }
-app.MapStaticAssets();
-app.MapFallbackToFile("index.html");
+app.UseEndpoints(_ => { });
+app.Run(async context =>
+{
+    var path = context.Request.Path;
+    if (path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await context.ChallengeAsync();
+            return;
+        }
+
+        await Results.Problem(statusCode: StatusCodes.Status404NotFound).ExecuteAsync(context);
+        return;
+    }
+
+    if (path.StartsWithSegments("/auth", StringComparison.OrdinalIgnoreCase))
+    {
+        await Results.Problem(statusCode: StatusCodes.Status404NotFound).ExecuteAsync(context);
+        return;
+    }
+
+    if ((HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)) &&
+        !Path.HasExtension(path.Value))
+    {
+        var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+        if (!index.Exists)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await using var stream = index.CreateReadStream();
+        await Results.Stream(stream, "text/html").ExecuteAsync(context);
+        return;
+    }
+
+    context.Response.StatusCode = StatusCodes.Status404NotFound;
+});
 app.Run();
 public partial class Program { }

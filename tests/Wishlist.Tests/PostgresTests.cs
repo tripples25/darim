@@ -36,6 +36,114 @@ public class PostgresTests(PostgresFixture fixture) {
   Assert.True(await Try(carol, gift.Id, "reserve"));
  }
 
+ [Fact]
+ public async Task SoloReservationPreventsChangingGiftToUnlimited()
+ {
+  var s = await Setup();
+  Assert.True(await Try(s.a, s.gift, "reserve"));
+
+  await using (var db = new AppDb(fixture.Options))
+   await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
+    input: new GiftWriteInput("Кофемолка", Unlimited: true)));
+
+  await using var read = new AppDb(fixture.Options);
+  var mine = Assert.Single(await new GiftService(read).Mine(s.owner));
+  Assert.Null(mine.Participation);
+  var gift = await read.Gifts.Include(g => g.Shares).SingleAsync(g => g.Id == s.gift);
+  Assert.False(gift.Unlimited);
+  Assert.Equal("solo", gift.Mode);
+  Assert.Equal<Guid?>(s.a, gift.DonorId);
+  Assert.Empty(gift.Shares);
+  Assert.Equal("solo", Assert.Single(await new GiftService(read).Giving(s.a)).Participation?.Mode);
+ }
+
+ [Fact]
+ public async Task SplitParticipantsPreventChangingGiftToUnlimited()
+ {
+  var s = await Setup();
+  Assert.True(await Try(s.a, s.gift, "split", 2));
+  Assert.True(await Try(s.b, s.gift, "join"));
+
+  await using (var db = new AppDb(fixture.Options))
+   await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
+    input: new GiftWriteInput("Кофемолка", Unlimited: true)));
+
+  await using var read = new AppDb(fixture.Options);
+  var mine = Assert.Single(await new GiftService(read).Mine(s.owner));
+  Assert.Null(mine.Participation);
+  var gift = await read.Gifts.Include(g => g.Shares).SingleAsync(g => g.Id == s.gift);
+  Assert.False(gift.Unlimited);
+  Assert.Equal("split", gift.Mode);
+  Assert.Equal(2, gift.Shares.Count);
+  var donorView = Assert.Single(await new GiftService(read).Giving(s.a));
+  Assert.Equal("split", donorView.Participation?.Mode);
+  Assert.Equal(2, donorView.Participation!.Participants!.Length);
+ }
+
+ [Fact]
+ public async Task IndependentUnlimitedReservationsPreventChangingGiftToOrdinary()
+ {
+  var (owner, alice, bob, _, _) = await Setup();
+  Guid giftId;
+  await using (var db = new AppDb(fixture.Options))
+  {
+   var gift = await new GiftService(db).Create(owner, new GiftWriteInput("Цветы", Unlimited: true));
+   giftId = gift.Id;
+  }
+  await Try(alice, giftId, "reserve");
+  await Try(bob, giftId, "reserve");
+
+  await using (var db = new AppDb(fixture.Options))
+   await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(owner, giftId,
+    input: new GiftWriteInput("Цветы", Unlimited: false)));
+
+  await using (var db = new AppDb(fixture.Options))
+   await new GiftService(db).Change(owner, giftId,
+    input: new GiftWriteInput("Цветы обновлённые", Unlimited: true));
+
+  await using var read = new AppDb(fixture.Options);
+  var service = new GiftService(read);
+  Assert.True(Assert.Single(await service.Giving(alice)).Unlimited);
+  Assert.Equal("Цветы обновлённые", Assert.Single(await service.Giving(alice)).Details.Title);
+  Assert.True(Assert.Single(await service.Giving(bob)).Unlimited);
+ }
+
+ [Fact]
+ public async Task BoughtGiftCannotChangeUnlimitedType()
+ {
+  var s = await Setup();
+  await Try(s.a, s.gift, "reserve");
+  await using (var db = new AppDb(fixture.Options))
+   await new GiftService(db).Change(s.a, s.gift, action: new("buy"));
+
+  await using (var db = new AppDb(fixture.Options))
+   await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
+    input: new GiftWriteInput("Кофемолка", Unlimited: true)));
+
+  await using var read = new AppDb(fixture.Options);
+  Assert.False(Assert.Single(await new GiftService(read).Giving(s.a)).Unlimited);
+  Assert.True(Assert.Single(await new GiftService(read).Giving(s.a)).Participation!.Bought);
+ }
+
+ [Fact]
+ public async Task ArchivedGiftCannotChangeUnlimitedType()
+ {
+  var s = await Setup();
+  await Try(s.a, s.gift, "reserve");
+  await using (var db = new AppDb(fixture.Options))
+   await new GiftService(db).Change(s.owner, s.gift, archive: true);
+
+  await using (var db = new AppDb(fixture.Options))
+   await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
+    input: new GiftWriteInput("Кофемолка", Unlimited: true)));
+
+  await using var read = new AppDb(fixture.Options);
+  var gift = Assert.Single(await new GiftService(read).Giving(s.a));
+  Assert.False(gift.Unlimited);
+  Assert.True(gift.Archived);
+  Assert.Equal("solo", gift.Participation!.Mode);
+ }
+
  async Task<(Guid owner,Guid a,Guid b,Guid c,Guid gift)> Setup(){
   await using var db=new AppDb(fixture.Options);var company=new Company{Name="Друзья",InviteHash=Guid.NewGuid().ToString()};db.Companies.Add(company);await db.SaveChangesAsync();
   var users=Enumerable.Range(0,4).Select(_=>new AppUser{Name="Друг",TelegramId=Random.Shared.NextInt64(1,long.MaxValue),CompanyId=company.Id,Contact="@friend"}).ToArray();db.Users.AddRange(users);db.Memberships.AddRange(users.Select(u=>new CompanyMembership{UserId=u.Id,CompanyId=company.Id}));await db.SaveChangesAsync();

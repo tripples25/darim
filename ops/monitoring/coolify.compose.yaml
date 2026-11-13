@@ -1,4 +1,49 @@
 services:
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.12.1
+    restart: unless-stopped
+    command:
+      - --web.listen-address=172.28.45.1:9100
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.diskstats
+      - --collector.filesystem
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.netdev
+      - --collector.stat
+      - --collector.time
+      - --collector.uname
+      - --collector.vmstat
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)'
+      - '--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$'
+    network_mode: host
+    pid: host
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    cpus: 0.20
+    pids_limit: 32
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=8m']
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind: { propagation: rslave }
+      - type: bind
+        source: /proc
+        target: /host/proc
+        read_only: true
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
   prometheus:
     image: prom/prometheus:v3.16.0
     restart: unless-stopped
