@@ -45,9 +45,7 @@ switch ($Action) {
         $remoteScript = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'remote-export.sh'))
         $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
         $archivePath = Join-Path $backupRoot ('darim-' + $stamp + '-' + [guid]::NewGuid().ToString('N') + '.darim')
-        $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = $ssh
-        $startInfo.Arguments = '-T darim-prod bash -s -- ' + $ServiceUuid
+        $startInfo = New-DarimBackupSshProcessStartInfo -SshPath $ssh -ServiceUuid $ServiceUuid
         $archive = Invoke-EncryptedBackupProcess -ProcessStartInfo $startInfo -ArchivePath $archivePath `
             -StatusPath $statusPath -RemoteScript $remoteScript -RetentionDays $KeepDays
         Write-Output ('Encrypted backup created: {0} ({1:N0} bytes).' -f $archive.Name, $archive.Length)

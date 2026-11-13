@@ -175,6 +175,19 @@ function New-DarimBackupScheduleDefinition {
     }
 }
 
+function New-DarimBackupSshProcessStartInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SshPath,
+        [ValidatePattern('^[a-z0-9]{24}$')][string]$ServiceUuid = '6o4qlqy50orrzxavuw0c7rp5'
+    )
+    $info = [System.Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = $SshPath
+    $info.Arguments = '-T -oBatchMode=yes -oConnectTimeout=10 -oServerAliveInterval=15 ' +
+        '-oServerAliveCountMax=3 darim-prod bash -s -- ' + $ServiceUuid
+    return $info
+}
+
 Export-ModuleMember -Function Set-DarimBackupDirectoryAcl, Invoke-EncryptedBackupProcess,
     Remove-DarimBackupRetention, Get-DarimBackupStatus, Write-DarimBackupStatus,
-    New-DarimBackupScheduleDefinition
+    New-DarimBackupScheduleDefinition, New-DarimBackupSshProcessStartInfo

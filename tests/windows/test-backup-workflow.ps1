@@ -88,6 +88,13 @@ try {
     Assert-That ($schedule.Action.Argument -match '-KeepDays 17') 'schedule dropped retention setting'
     Assert-That ($schedule.Action.Argument -match '-ServiceUuid 6o4qlqy50orrzxavuw0c7rp5') 'schedule dropped service UUID'
 
+    $sshStart = New-DarimBackupSshProcessStartInfo -SshPath 'C:\Windows\System32\OpenSSH\ssh.exe' `
+        -ServiceUuid '6o4qlqy50orrzxavuw0c7rp5'
+    Assert-That ($sshStart.Arguments -match '-oBatchMode=yes') 'SSH could prompt for interactive credentials'
+    Assert-That ($sshStart.Arguments -match '-oConnectTimeout=10') 'SSH connection timeout is not bounded'
+    Assert-That ($sshStart.Arguments -match '-oServerAliveInterval=15') 'SSH keepalive interval is missing'
+    Assert-That ($sshStart.Arguments -match '-oServerAliveCountMax=3') 'SSH keepalive failure count is missing'
+
     Write-Output 'Backup workflow synthetic tests passed.'
 } finally {
     Remove-Item -LiteralPath $directory -Recurse -Force
