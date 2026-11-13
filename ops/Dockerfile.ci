@@ -9,6 +9,6 @@ COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates git && \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-certificates git jq && \
     npx --yes playwright@1.56.1 install --with-deps chromium && \
     rm -rf /var/lib/apt/lists/*
