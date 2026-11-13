@@ -47,6 +47,8 @@ class SystemMetricsTests(unittest.TestCase):
         self.assertLessEqual(int(exporter["mem_limit"]), 128 * 1024 * 1024)
         self.assertLessEqual(exporter["cpus"], 0.25)
         self.assertLessEqual(exporter["pids_limit"], 64)
+        self.assertEqual(["/tmp:rw,noexec,nosuid,size=8m"], exporter["tmpfs"])
+        self.assertEqual(1, len(exporter["tmpfs"]))
         self.assertIn("--web.listen-address=172.28.45.1:9100", command)
         self.assertIn("--path.rootfs=/host", command)
         self.assertIn("--path.procfs=/host/proc", command)

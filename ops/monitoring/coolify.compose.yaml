@@ -29,7 +29,7 @@ services:
     mem_limit: 96m
     cpus: 0.20
     pids_limit: 32
-    tmpfs: [/tmp:rw,noexec,nosuid,size=8m]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=8m']
     volumes:
       - type: bind
         source: /
