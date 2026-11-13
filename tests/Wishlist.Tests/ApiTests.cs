@@ -567,7 +567,20 @@ public class ApiTests(PostgresFixture db) {
   Assert.Equal("/?login=failed", response.Headers.Location?.OriginalString);
  }
 
- WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null, string? telegramClientId=null, string? telegramClientSecret=null)=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Telegram:ClientId",telegramClientId);b.UseSetting("Telegram:ClientSecret",telegramClientSecret);b.UseSetting("Demo:Enabled","false");b.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");});
+ WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null, string? telegramClientId=null, string? telegramClientSecret=null) =>
+  new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+  {
+   builder.UseEnvironment(environment);
+   builder.UseWebRoot(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+    "..", "..", "..", "..", "..", "src", "Wishlist.Client", "wwwroot")));
+   builder.UseSetting("Auth:SigningKey",Key);
+   builder.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());
+   builder.UseSetting("Telegram:BotToken","123:test-secret");
+   builder.UseSetting("Telegram:ClientId",telegramClientId);
+   builder.UseSetting("Telegram:ClientSecret",telegramClientSecret);
+   builder.UseSetting("Demo:Enabled","false");
+   builder.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");
+  });
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
  [Theory][InlineData(false)][InlineData(true)]

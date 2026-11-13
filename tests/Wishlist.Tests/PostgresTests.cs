@@ -40,34 +40,44 @@ public class PostgresTests(PostgresFixture fixture) {
  public async Task SoloReservationPreventsChangingGiftToUnlimited()
  {
   var s = await Setup();
-  await Try(s.a, s.gift, "reserve");
+  Assert.True(await Try(s.a, s.gift, "reserve"));
 
   await using (var db = new AppDb(fixture.Options))
    await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
     input: new GiftWriteInput("Кофемолка", Unlimited: true)));
 
   await using var read = new AppDb(fixture.Options);
-  var gift = Assert.Single(await new GiftService(read).Mine(s.owner));
+  var mine = Assert.Single(await new GiftService(read).Mine(s.owner));
+  Assert.Null(mine.Participation);
+  var gift = await read.Gifts.Include(g => g.Shares).SingleAsync(g => g.Id == s.gift);
   Assert.False(gift.Unlimited);
-  Assert.Equal("solo", gift.Participation?.Mode);
+  Assert.Equal("solo", gift.Mode);
+  Assert.Equal<Guid?>(s.a, gift.DonorId);
+  Assert.Single(gift.Shares);
+  Assert.Equal("solo", Assert.Single(await new GiftService(read).Giving(s.a)).Participation?.Mode);
  }
 
  [Fact]
  public async Task SplitParticipantsPreventChangingGiftToUnlimited()
  {
   var s = await Setup();
-  await Try(s.a, s.gift, "split", 2);
-  await Try(s.b, s.gift, "join");
+  Assert.True(await Try(s.a, s.gift, "split", 2));
+  Assert.True(await Try(s.b, s.gift, "join"));
 
   await using (var db = new AppDb(fixture.Options))
    await Assert.ThrowsAsync<RuleException>(() => new GiftService(db).Change(s.owner, s.gift,
     input: new GiftWriteInput("Кофемолка", Unlimited: true)));
 
   await using var read = new AppDb(fixture.Options);
-  var gift = Assert.Single(await new GiftService(read).Mine(s.owner));
+  var mine = Assert.Single(await new GiftService(read).Mine(s.owner));
+  Assert.Null(mine.Participation);
+  var gift = await read.Gifts.Include(g => g.Shares).SingleAsync(g => g.Id == s.gift);
   Assert.False(gift.Unlimited);
-  Assert.Equal("split", gift.Participation?.Mode);
-  Assert.Equal(2, Assert.Single(await new GiftService(read).Giving(s.a)).Participation!.Participants!.Length);
+  Assert.Equal("split", gift.Mode);
+  Assert.Equal(2, gift.Shares.Count);
+  var donorView = Assert.Single(await new GiftService(read).Giving(s.a));
+  Assert.Equal("split", donorView.Participation?.Mode);
+  Assert.Equal(2, donorView.Participation!.Participants!.Length);
  }
 
  [Fact]
