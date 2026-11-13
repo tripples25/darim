@@ -32,6 +32,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Database: Host=db;Database=wishlist;Username=wishlist;Password=${POSTGRES_PASSWORD}
       Auth__SigningKey: ${AUTH_SIGNING_KEY:?Set AUTH_SIGNING_KEY}
+      Telegram__CodeLoginEnabled: ${TELEGRAM_CODE_LOGIN_ENABLED:-true}
       Telegram__BotToken: ${TELEGRAM_BOT_TOKEN:-}
       Telegram__BotUsername: ${TELEGRAM_BOT_USERNAME:-}
       Telegram__ClientId: ${TELEGRAM_CLIENT_ID:-}

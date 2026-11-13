@@ -657,3 +657,11 @@
 @media (max-width: 360px) {
   .editor-form .form-row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 }
+
+.code-login{max-width:420px;margin-top:20px}
+.code-login summary{cursor:pointer;color:var(--green);font-size:14px;font-weight:600;padding:10px 0}
+.code-login summary:focus-visible{outline:2px solid var(--green);outline-offset:4px}
+.code-login .dialog-hint{margin:8px 0 16px}
+.code-login a{text-decoration:underline;text-underline-offset:3px}
+.code-login input{text-transform:uppercase;letter-spacing:.08em}
+.code-login .error-box{margin-bottom:12px}

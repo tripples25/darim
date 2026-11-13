@@ -570,6 +570,22 @@ public class ApiTests(PostgresFixture db) {
  WebApplicationFactory<Program> Factory(string environment="Testing", string? artworkManagerIds=null, string? telegramClientId=null, string? telegramClientSecret=null)=>new WebApplicationFactory<Program>().WithWebHostBuilder(b=>{b.UseEnvironment(environment);b.UseSetting("Auth:SigningKey",Key);b.UseSetting("ConnectionStrings:Database",db.Container.GetConnectionString());b.UseSetting("Telegram:BotToken","123:test-secret");b.UseSetting("Telegram:ClientId",telegramClientId);b.UseSetting("Telegram:ClientSecret",telegramClientSecret);b.UseSetting("Demo:Enabled","false");b.UseSetting("CardArtwork:ManagerTelegramIds",artworkManagerIds??"");});
  async Task<(AppUser owner,AppUser donor,Guid gift)> Seed(){await using var ctx=new AppDb(db.Options);var c=new Company{Name="API company",InviteHash=Guid.NewGuid().ToString()};var owner=new AppUser{Name="Получатель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};var donor=new AppUser{Name="Даритель",CompanyId=c.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue),Contact="@donor"};c.OrganizerId=owner.Id;ctx.AddRange(c,owner,donor);ctx.Memberships.AddRange(new CompanyMembership{UserId=owner.Id,CompanyId=c.Id},new CompanyMembership{UserId=donor.Id,CompanyId=c.Id});var g=Wishlist.Core.Gift.New(c.Id,owner.Id,new("Сюрприз"));ctx.Gifts.Add(g);await ctx.SaveChangesAsync();return(owner,donor,g.Id);}
  static void Bearer(HttpClient client,AppUser u){var config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Auth:SigningKey",Key}}).Build();client.DefaultRequestHeaders.Authorization=new("Bearer",AuthSetup.MiniToken(u,config).Token);}
+ [Theory][InlineData(false)][InlineData(true)]
+ public async Task BotCodeCreatesOrRestoresSameAccount(bool existing){
+  using var app=Factory().WithWebHostBuilder(b=>b.UseSetting("Telegram:CodeLoginEnabled","true"));
+  using var client=app.CreateClient(new WebApplicationFactoryClientOptions{BaseAddress=new Uri("https://localhost")});
+  var telegramId=Random.Shared.NextInt64(1,long.MaxValue);Guid? original=null;
+  if(existing){using var scope=app.Services.CreateScope();original=(await scope.ServiceProvider.GetRequiredService<AccountService>().Login(new(telegramId,"Юлия","julia","https://cdn4.telesco.pe/file/retained-avatar.jpg"))).Id;}
+  var codes=app.Services.GetRequiredService<TelegramLoginCodes>();var code=codes.Issue(new(telegramId,"Юлия","julia"));
+  Assert.Equal(HttpStatusCode.BadRequest,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
+  client.DefaultRequestHeaders.Add("Origin","https://evil.example");
+  Assert.Equal(HttpStatusCode.BadRequest,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
+  client.DefaultRequestHeaders.Remove("Origin");client.DefaultRequestHeaders.Add("Origin","https://localhost");
+  Assert.Equal(HttpStatusCode.OK,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
+  var me=await client.GetFromJsonAsync<MeDto>("/api/me");Assert.Equal("Юлия",me!.User.Name);
+  if(existing){Assert.Equal(original,me.User.Id);using var scope=app.Services.CreateScope();var saved=await scope.ServiceProvider.GetRequiredService<AppDb>().Users.FindAsync(original);Assert.Equal("https://cdn4.telesco.pe/file/retained-avatar.jpg",saved!.TelegramAvatarUrl);}
+  Assert.Equal(HttpStatusCode.Unauthorized,(await client.PostAsJsonAsync("/auth/code",new{Code=code})).StatusCode);
+ }
  [Fact] public void BrowserUsesVerifiedTelegramIdRatherThanOidcSubject(){var claims=new ClaimsPrincipal(new ClaimsIdentity([new("sub","1234123412341234123"),new("id","987654321"),new("name","Юлия")]));var identity=AuthSetup.IdentityFromClaims(claims);Assert.Equal(987654321,identity.Id);}
  [Fact] public async Task TelegramAvatarIsSavedAndExposedOnlyToSplitParticipants(){
   const string avatar="https://cdn4.telesco.pe/file/avatar.jpg";
