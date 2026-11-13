@@ -100,6 +100,10 @@ public class RoutingTests
         using var ui = await client.GetAsync("/wishlist/friends");
         Assert.Equal(HttpStatusCode.OK, ui.StatusCode);
         Assert.Equal("text/html", ui.Content.Headers.ContentType?.MediaType);
+
+        using var favicon = await client.GetAsync("/favicon.png");
+        Assert.Equal(HttpStatusCode.OK, favicon.StatusCode);
+        Assert.Equal("image/png", favicon.Content.Headers.ContentType?.MediaType);
     }
 
     private static WebApplicationFactory<Program> Factory(bool oidcEnabled = false) =>

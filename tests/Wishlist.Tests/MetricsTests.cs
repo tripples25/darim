@@ -48,7 +48,7 @@ public class MetricsTests
         var metrics = await response.Content.ReadAsStringAsync();
         Assert.Contains("darim_http_requests_total{method=\"POST\",route=\"/api/gifts/{id:guid}/actions\",status_class=\"4xx\"} 1", metrics);
         Assert.Contains("darim_http_request_duration_seconds_count{method=\"POST\",route=\"/api/gifts/{id:guid}/actions\"} 1", metrics);
-        Assert.Contains("method=\"OTHER\",route=\"/api/{**path}\"", metrics);
+        Assert.Contains("method=\"OTHER\",route=\"<unmatched>\"", metrics);
         Assert.Contains("darim_ohmywishes_sync_total", metrics);
         Assert.DoesNotContain(giftId.ToString(), metrics);
         Assert.DoesNotContain("private-query", metrics);
