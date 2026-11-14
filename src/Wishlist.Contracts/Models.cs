@@ -4,7 +4,7 @@ public record CompanyDto(Guid Id, string Name, bool IsOrganizer, PersonDto[] Mem
 public record MeDto(PersonDto User, CompanyDto? Company, CompanyDto[]? Companies = null);
 public record GiftVisibility(bool AllCompanies, Guid[] CompanyIds);
 public record GiftInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null, string Occasion = "Без повода", DateOnly? OccasionDate = null);
-public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null);
+public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null, bool Open = false);
 public record GiftWriteInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null,
     string Occasion = "Без повода", DateOnly? OccasionDate = null, byte[]? Photo = null, bool RemovePhoto = false,
     GiftVisibility? Visibility = null, bool Unlimited = false)
