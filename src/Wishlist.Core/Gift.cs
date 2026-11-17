@@ -6,6 +6,7 @@ public class GiftShare
 {
  public Guid GiftId { get; set; }
  public Guid UserId { get; set; }
+ public int JoinOrder { get; set; }
  public bool Bought { get; set; }
  public string? OriginalJson { get; set; }
 }
@@ -18,6 +19,7 @@ public class Gift {
  public string Title {get;set;} = ""; public string? Url {get;set;} public decimal? Price {get;set;} public string? Comment {get;set;}
  public string Occasion {get;set;} = "Без повода"; public DateOnly? OccasionDate {get;set;} public bool Archived {get;set;}
  public string Mode {get;set;} = "free"; public Guid? DonorId {get;set;} public int Slots {get;set;} public bool Bought {get;set;}
+ public bool SplitOpen {get;set;}
  public string? OriginalJson {get;set;} public DateTimeOffset Created {get;set;} = DateTimeOffset.UtcNow;
  public string? OhmywishesKey {get;set;}
  public string? OhmywishesWebId {get;set;}
@@ -62,25 +64,37 @@ public class Gift {
    case "reserve": Require(Mode=="free","Подарок уже занят.");Snapshot();Mode="solo";DonorId=userId;break;
    case "split":
     Require(Mode=="free","Подарок уже занят.");Require(hasContact,"Укажите контакт в профиле перед участием в распиле.",400);
-    Require(input.Slots is >=2 && input.Slots<=otherMembers,"Число долей: от 2 до числа остальных участников.",400);
-    Snapshot();Mode="split";CompanyId=input.CompanyId;Slots=input.Slots.GetValueOrDefault();DonorId=userId;Shares.Add(new(){GiftId=Id,UserId=userId});break;
+    Require(otherMembers>=2,"Для распила нужны хотя бы два дарителя.",400);
+    Snapshot();Mode="split";CompanyId=input.CompanyId;Slots=2;SplitOpen=true;DonorId=userId;Shares.Add(new(){GiftId=Id,UserId=userId,JoinOrder=1});break;
    case "join":
-    Require(Mode=="split" && Shares.Count<Slots,"Свободных долей нет.");Require(hasContact,"Укажите контакт в профиле.",400);
-    Require(Shares.All(x=>x.UserId!=userId),"Вы уже участвуете.");Shares.Add(new(){GiftId=Id,UserId=userId});break;
+    Require(Mode=="split" && SplitOpen,"Сбор участников завершён.");Require(hasContact,"Укажите контакт в профиле.",400);
+    Require(Shares.All(x=>x.UserId!=userId),"Вы уже участвуете.");Shares.Add(new(){GiftId=Id,UserId=userId,JoinOrder=Shares.Max(x=>x.JoinOrder)+1});break;
    case "leave":
     Require(Mode=="split" && Shares.Any(x=>x.UserId==userId),"Вы не участвуете.",403);
-    Require(DonorId!=userId,"Передайте координацию или отмените распил.");Shares.RemoveAll(x=>x.UserId==userId);break;
+    LeaveSplit(userId);break;
+   case "close-split":
+    Require(Mode=="split" && DonorId==userId,"Сбор завершает координатор.",403);
+    Require(SplitOpen && Shares.Count>=2,"Для завершения сбора нужны хотя бы два участника.");
+    SplitOpen=false;Slots=Shares.Count;break;
    case "transfer":
     Require(Mode=="split" && DonorId==userId,"Передать координацию может только координатор.",403);
     Require(input.UserId!=userId && Shares.Any(x=>x.UserId==input.UserId),"Выберите другого участника распила.",400);DonorId=input.UserId;break;
    case "cancel":
     Require(Mode!="free" && DonorId==userId,"Отменить может только даритель или координатор.",403);
-    Mode="free";CompanyId=null;DonorId=null;Slots=0;Shares.Clear();OriginalJson=null;break;
+    if(Mode=="split")LeaveSplit(userId);else Release();break;
    case "buy":
     Require(Mode!="free" && DonorId==userId,"Покупку отмечает даритель или координатор.",403);
-    Require(Mode!="split" || Shares.Count==Slots,"Сначала должны быть заняты все доли.");Bought=true;break;
+    Require(Mode!="split" || !SplitOpen && Shares.Count>=2,"Сначала завершите сбор участников.");Bought=true;break;
    default: throw new RuleException("Неизвестное действие.",400);
   }
+ }
+ private void Release() {Mode="free";CompanyId=null;DonorId=null;Slots=0;SplitOpen=false;Shares.Clear();OriginalJson=null;}
+ private void LeaveSplit(Guid userId)
+ {
+  Shares.RemoveAll(x=>x.UserId==userId);
+  if(Shares.Count==0){Release();return;}
+  if(DonorId==userId)DonorId=Shares.OrderBy(x=>x.JoinOrder).ThenBy(x=>x.UserId).First().UserId;
+  SplitOpen=true;Slots=Math.Max(2,Shares.Count);
  }
  private void ActOnUnlimitedGift(Guid userId, string action)
  {
@@ -121,7 +135,7 @@ public class Gift {
   }
   var mine=DonorId==viewer || Shares.Any(x=>x.UserId==viewer);
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
-   Mode=="split" && mine ? Shares.Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null);
+   Mode=="split" && mine ? Shares.OrderBy(x=>x.JoinOrder).ThenBy(x=>x.UserId).Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null,Mode=="split" && SplitOpen);
   return new(Id,owner,Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,
    OhmywishesKey!=null,PhotoVersion:PhotoVersion);
  }

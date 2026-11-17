@@ -85,7 +85,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
 
         if (action != null)
         {
-            var continuing = action.Action is "leave" or "transfer" or "cancel" or "buy" && before.Contains(id);
+            var continuing = action.Action is "leave" or "transfer" or "cancel" or "buy" or "close-split" && before.Contains(id);
             if (id == gift.OwnerId) throw new RuleException("Нельзя выбрать собственный подарок.", 403);
             if (!continuing)
             {
@@ -112,14 +112,14 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 gift.OhmywishesReservationSource = ReservationProtector().Protect(reservePath);
                 gift.OhmywishesOccupied = true;
             }
-            if (action.Action == "cancel" && gift.OhmywishesReservationSource is { } source)
+            gift.Act(id, action with { CompanyId = company }, participants.Length - 1,
+                !string.IsNullOrWhiteSpace(user.Contact) || !string.IsNullOrWhiteSpace(user.Username));
+            if (gift.Mode == "free" && gift.OhmywishesReservationSource is { } source)
             {
                 cancelPath = Unprotect(ReservationProtector(), source);
                 gift.OhmywishesReservationSource = null;
                 gift.OhmywishesOccupied = false;
             }
-            gift.Act(id, action with { CompanyId = company }, participants.Length - 1,
-                !string.IsNullOrWhiteSpace(user.Contact) || !string.IsNullOrWhiteSpace(user.Username));
         }
         else
         {
@@ -165,7 +165,8 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         var verb = input != null ? "Желание изменено" : archive == true ? "Желание отправлено в архив"
             : restored ? "Желание возвращено из архива" : action?.Action switch
         {
-            "cancel" => "Бронь или распил отменены",
+            "cancel" => gift.Mode == "split" ? "Координатор вышел из распила" : "Бронь снята",
+            "close-split" => "Сбор участников завершён",
             "buy" => "Подарок отмечен купленным",
             "leave" => "Участник вышел из распила",
             "transfer" => "Координатор распила изменён",

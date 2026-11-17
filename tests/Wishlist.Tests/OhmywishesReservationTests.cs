@@ -116,6 +116,12 @@ public class OhmywishesReservationPostgresTests(PostgresFixture fixture)
             coordinator = partner.Id;
         }
         await service.Change(coordinator, gift.Id, action: new("cancel"));
+        if (action == "split")
+        {
+            Assert.Single(handler.Writes); // Another participant still owns the shared reservation.
+            Assert.True(Assert.Single(await service.Giving(donor.Id)).Participation!.IsCoordinator);
+            await service.Change(donor.Id, gift.Id, action: new("leave"));
+        }
         Assert.Empty(await service.Giving(donor.Id));
         Assert.Equal([HttpMethod.Post, HttpMethod.Delete], handler.Writes);
     }

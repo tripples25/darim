@@ -1,6 +1,6 @@
 # Дарим 🎁
 
-> Основной развиваемый интерфейс перенесён в отдельный [darim-frontend](https://github.com/sharphurt/darim-frontend) на React/Vite. Этот репозиторий отвечает за backend и API. От Razor/Blazor отказываемся; существующий `Wishlist.Client` сохраняется на время перехода. Описание Blazor ниже относится к прежнему интерфейсу. Правила совместной работы — в [AGENTS.md](AGENTS.md).
+> Основной развиваемый интерфейс — [darim-frontend](https://github.com/sharphurt/darim-frontend) на React/Vite. Здесь находятся API, бизнес-логика и миграции. Blazor сохраняется на время перехода и проверки отката. Правила совместной работы — в [AGENTS.md](AGENTS.md); план переключения — в [репозитории интерфейса](https://github.com/sharphurt/darim-frontend/blob/main/ops/react-cutover.md).
 
 Общий вишлист закрытой компании: один список по людям, скрытая бронь и совместные подарки с равными долями. Обычный сайт и Telegram Mini App используют один Blazor WebAssembly интерфейс и ASP.NET Core API.
 

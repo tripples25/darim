@@ -92,7 +92,17 @@ test('create, filter, reserve and hide reservation from recipient',async({page,b
 test('split, join, coordinate and buy together',async({page,browser})=>{
  await login(page,'Юлия');const title='Совместный подарок '+Date.now();await create(page,title);
  const ca=await browser.newContext();const a=await ca.newPage();await login(a,'Макс');const cardA=a.locator('article').filter({has:a.getByRole('heading',{name:title,exact:true})});await cardA.getByRole('button',{name:'Распилить',exact:true}).click();await a.getByRole('dialog').getByLabel('Количество участников').fill('2');await a.getByRole('button',{name:'Распилить и занять долю'}).click();await expect(cardA).toContainText('Занято 1 из 2');
- const cb=await browser.newContext();const b=await cb.newPage();await login(b,'Аня');const cardB=b.locator('article').filter({has:b.getByRole('heading',{name:title,exact:true})});await cardB.getByRole('button',{name:'Занять одну долю'}).click();await expect(cardB).toContainText('Занято 2 из 2');await a.reload();await cardA.getByRole('button',{name:'Участники и детали'}).click();await expect(a.getByRole('dialog')).toContainText('Аня');await expect(a.getByRole('dialog')).toContainText('координатор');await a.getByRole('button',{name:'Отметить купленным',exact:true}).click();await a.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(cardA).toContainText('Куплен');await ca.close();await cb.close();
+ const cb=await browser.newContext();const b=await cb.newPage();await login(b,'Аня');const cardB=b.locator('article').filter({has:b.getByRole('heading',{name:title,exact:true})});await cardB.getByRole('button',{name:'Занять одну долю'}).click();await expect(cardB).toContainText('Занято 2 из 2');
+ // The temporary Blazor client does not expose the new collection-close control.
+ // Exercise the coordinator API transition before testing its existing purchase UI.
+ const gifts=await (await a.request.get('/api/gifts')).json();
+ const splitGift=gifts.find((gift:any)=>gift.details.title===title);
+ const csrf=await (await a.request.get('/api/csrf')).json();
+ const closed=await a.request.post('/api/gifts/'+splitGift.id+'/actions',{
+  headers:{'X-CSRF-TOKEN':csrf.token},data:{action:'close-split'}
+ });
+ expect(closed.ok()).toBeTruthy();expect((await closed.json()).participation.open).toBe(false);
+ await a.reload();await cardA.getByRole('button',{name:'Участники и детали'}).click();await expect(a.getByRole('dialog')).toContainText('Аня');await expect(a.getByRole('dialog')).toContainText('координатор');await a.getByRole('button',{name:'Отметить купленным',exact:true}).click();await a.getByRole('button',{name:'Подтвердить',exact:true}).click();await expect(cardA).toContainText('Куплен');await ca.close();await cb.close();
 });
 test('editing occasion preserves donor history and sends notification',async({page,browser})=>{
  await login(page,'Юлия');const title='Изменяемое желание '+Date.now();const owner=await create(page,title);
