@@ -163,6 +163,7 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         db.ChangeTracker.Clear();
         await service.Change(donor.Id, gift.Id, action: new GiftActionInput("split", 2));
         await service.Change(otherDonor.Id, gift.Id, action: new GiftActionInput("join"));
+        await service.Change(donor.Id, gift.Id, action: new GiftActionInput("close-split"));
         await service.Change(donor.Id, gift.Id, action: new GiftActionInput("buy"));
         db.ChangeTracker.Clear();
 
