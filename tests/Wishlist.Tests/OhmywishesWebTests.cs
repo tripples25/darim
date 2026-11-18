@@ -38,6 +38,7 @@ public class OhmywishesWebTests
         Assert.Equal(Account, source!.AccountId);
         var snapshot = await web.Snapshot(Account, List, default);
         Assert.Equal("Книга", Assert.Single(snapshot).Value.Details.Title);
+        Assert.Equal("https://cdn.ohmywish.es/book.webp", Assert.Single(snapshot).Value.PhotoUrl);
         handler.ListRequiresSignIn = true;
         Assert.Empty(await web.Snapshot(Account, List, default));
         handler.ListRequiresSignIn = false;
@@ -199,7 +200,7 @@ public class OhmywishesWebTests
                     } } },
                 $"/api/v3/wishes/{Wish}" => new { item = new { id = Wish, title = WishTitle, visibility = Visibility,
                     isPrivate = Visibility == "private", isFulfilled = false, creator = new { id = Account },
-                    photos = PhotoUrl == null ? [] : new[] { new { image = new { url = PhotoUrl } } },
+                    photos = PhotoUrl == null ? [] : new[] { new { url = PhotoUrl } },
                     wishLists = new[] { new { id = List } } } },
                 $"/api/v3/wishes/{AnotherWish}" => new { item = new { id = AnotherWish, title = "Новое желание",
                     visibility = "public", isPrivate = false, isFulfilled = false, creator = new { id = Account },
