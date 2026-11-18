@@ -18,6 +18,7 @@ builder.Services.AddSingleton<DarimMetrics>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TelegramLoginCodes>();
 if(!builder.Environment.IsEnvironment("Testing"))builder.Services.AddHostedService<TelegramLoginBot>();
+if(!builder.Environment.IsEnvironment("Testing"))builder.Services.AddHostedService<TelegramNotifications>();
 builder.Services.AddHttpClient("telegram-login",client=>client.Timeout=TimeSpan.FromSeconds(40)).RemoveAllLoggers()
  .ConfigurePrimaryHttpMessageHandler(()=>new HttpClientHandler{AllowAutoRedirect=false,UseCookies=false});
 builder.Services.AddSingleton<OhmywishesOptions>();
