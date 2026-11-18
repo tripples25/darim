@@ -255,7 +255,7 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         Assert.Equal(2, visible.Length);
         var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
         Assert.True(imported.FromOhmywishes);
-        Assert.True(imported.Visibility!.AllCompanies);
+        Assert.True(Assert.Single(await gifts.Mine(owner.Id)).Visibility!.AllCompanies);
         Assert.Null(imported.PhotoUrl);
         Assert.NotNull(imported.PhotoVersion);
         var photo = await gifts.Photo(donor.Id, imported.Id, imported.PhotoVersion.Value, default);
