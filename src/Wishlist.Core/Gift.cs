@@ -50,7 +50,7 @@ public class Gift {
   Title=input.Title.Trim();Url=string.IsNullOrWhiteSpace(input.Url)?null:input.Url.Trim();Price=input.Price;
   Comment=input.Comment?.Trim();Occasion=input.Occasion.Trim();OccasionDate=input.OccasionDate;
  }
- public void Archive(Guid userId) {Require(userId==OwnerId,"Архивировать может только владелец.",403);Archived=true;}
+ public void Archive(Guid userId) {Require(userId==OwnerId,"Архивировать может только владелец.",403);Archived=true;Release();Bought=false;}
  public void Restore(Guid userId) {Require(userId==OwnerId,"Вернуть желание из архива может только владелец.",403);Archived=false;}
  public void Act(Guid userId, GiftActionInput input, int otherMembers, bool hasContact) {
   Require(userId!=OwnerId,"Нельзя выбрать собственный подарок.",403);
