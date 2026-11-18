@@ -2,6 +2,19 @@ using Wishlist.Contracts;
 using Wishlist.Core;
 namespace Wishlist.Tests;
 public class GiftTests {
+ [Fact]
+ public void OwnerCanEditArchivedGiftWithoutRestoringOrChangingReservationHistory()
+ {
+  var gift=New();
+  gift.Act(alice,new("reserve"),3,true);
+  gift.Archive(owner);
+  gift.Edit(owner,new("Новое название",Price:500));
+  Assert.True(gift.Archived);
+  Assert.Equal("Новое название",gift.Details.Title);
+  Assert.Equal("Кофемолка",gift.View(alice,People()).Original!.Title);
+  Assert.True(gift.View(alice,People()).Participation!.IsMine);
+  Assert.Throws<RuleException>(()=>gift.Edit(bob,new("Чужое изменение")));
+ }
  readonly Guid owner=Guid.NewGuid(), alice=Guid.NewGuid(), bob=Guid.NewGuid(), outsider=Guid.NewGuid();
  Gift New() => Gift.New(Guid.NewGuid(),owner,new("Кофемолка", Price:12000));
  Dictionary<Guid,PersonDto> People() => new(){[owner]=new(owner,"Получатель"),[alice]=new(alice,"Алиса","@alice"),[bob]=new(bob,"Боб","@bob"),[outsider]=new(outsider,"Другой")};
