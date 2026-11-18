@@ -358,7 +358,7 @@ public class ApiTests(PostgresFixture db) {
  }
 
  [Fact]
- public async Task OwnerCanRestoreArchivedGiftWithoutLosingReservation()
+ public async Task OwnerCanRestoreArchivedGiftWithReservationsCleared()
  {
   var seed=await Seed();
   using var app=Factory();
@@ -373,8 +373,7 @@ public class ApiTests(PostgresFixture db) {
   Bearer(client,seed.donor);
   using var denied=await client.PostAsync($"{giftPath}/restore",null);
   Assert.Equal(HttpStatusCode.NotFound,denied.StatusCode);
-  var archived=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
-  Assert.True(archived.Archived);
+  Assert.Empty((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
 
   Bearer(client,seed.owner);
   using var response=await client.PostAsync($"{giftPath}/restore",null);
@@ -382,10 +381,8 @@ public class ApiTests(PostgresFixture db) {
   Assert.False((await response.Content.ReadFromJsonAsync<GiftDto>())!.Archived);
 
   Bearer(client,seed.donor);
-  var restored=Assert.Single((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
-  Assert.Equal(seed.gift,restored.Id);
-  Assert.False(restored.Archived);
-  Assert.True(restored.Participation!.IsMine);
+  Assert.Empty((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  (await client.PostAsJsonAsync($"{giftPath}/actions",new GiftActionInput("reserve"))).EnsureSuccessStatusCode();
  }
 
  [Fact]
