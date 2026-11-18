@@ -4,12 +4,12 @@ namespace Wishlist.Server.Data;
 public class AppUser {
  public Guid Id {get;set;}=Guid.NewGuid(); public long TelegramId {get;set;} public string Name {get;set;}="";
  public string? Username {get;set;} public string? Contact {get;set;} public Guid? CompanyId {get;set;}
- public string? TelegramAvatarUrl {get;set;}
+ public string? TelegramAvatarUrl {get;set;} public DateOnly? BirthDate {get;set;} public int? BirthdayReminderYear {get;set;}
  public Guid? OhmywishesAttempt {get;set;}
 }
 public class Company {public Guid Id {get;set;}=Guid.NewGuid();public string Name {get;set;}="";public Guid OrganizerId {get;set;}public string InviteHash {get;set;}="";public int? InviteRemaining {get;set;}}
 public class CompanyMembership {public Guid UserId {get;set;} public Guid CompanyId {get;set;}}
-public class Notice {public Guid Id {get;set;}=Guid.NewGuid();public Guid UserId {get;set;}public string Text {get;set;}="";public DateTimeOffset Created {get;set;}=DateTimeOffset.UtcNow;public bool Read {get;set;}}
+public class Notice {public DateTimeOffset? TelegramNextAttempt {get;set;} public int TelegramAttempts {get;set;} public Guid Id {get;set;}=Guid.NewGuid();public Guid UserId {get;set;}public string Text {get;set;}="";public DateTimeOffset Created {get;set;}=DateTimeOffset.UtcNow;public bool Read {get;set;}}
 public class GiftPhoto
 {
  public Guid GiftId { get; set; }

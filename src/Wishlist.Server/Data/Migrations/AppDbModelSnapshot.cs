@@ -193,6 +193,8 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<Guid?>("OhmywishesAttempt")
                         .HasColumnType("uuid");
 
+                    b.Property<DateOnly?>("BirthDate").HasColumnType("date");
+                    b.Property<int?>("BirthdayReminderYear").HasColumnType("integer");
                     b.Property<string>("TelegramAvatarUrl")
                         .HasColumnType("text");
 
@@ -311,6 +313,8 @@ namespace Wishlist.Server.Data.Migrations
                     b.Property<DateTimeOffset>("Created")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("TelegramNextAttempt").HasColumnType("timestamp with time zone");
+                    b.Property<int>("TelegramAttempts").HasColumnType("integer");
                     b.Property<bool>("Read")
                         .HasColumnType("boolean");
 

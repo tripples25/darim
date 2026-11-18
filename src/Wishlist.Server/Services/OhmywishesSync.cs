@@ -495,7 +495,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     private void Notify(Gift gift, string text)
     {
         foreach (var donor in gift.Donors())
-            db.Notices.Add(new() { UserId = donor, Text = text });
+            db.Notices.Add(new() { UserId = donor, TelegramNextAttempt = DateTimeOffset.UtcNow, Text = text });
     }
 
     private void StoreTokens(OhmywishesConnection connection, OhmywishesTokens tokens) =>
