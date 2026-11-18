@@ -103,6 +103,11 @@ public class OhmywishesReservationPostgresTests(PostgresFixture fixture)
 
         handler.OccupiedByOther = false;
         await service.Change(donor.Id, gift.Id, action: new(action, Slots: action == "split" ? 2 : null));
+        Assert.Equal([HttpMethod.Post], handler.Writes);
+        var external = await new OhmywishesReservations(http, options).Read(
+            OhmywishesReservationTests.Id, $"wishes/{OhmywishesReservationTests.Id}", default);
+        Assert.True(external.Occupied);
+        Assert.True(external.Mine);
         Assert.True(Assert.Single(await service.Giving(donor.Id)).Participation!.IsMine);
         Assert.Null(Assert.Single(await service.Mine(owner.Id)).Participation);
 
