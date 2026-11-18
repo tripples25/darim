@@ -112,7 +112,8 @@ public sealed class OhmywishesMcp(HttpClient http)
             return null;
         foreach (var photo in photos.EnumerateArray())
         {
-            if (!Property(photo, out var image, "image")) continue;
+            // Web API now returns image fields directly; older/MCP responses wrap them.
+            var image = Property(photo, out var nested, "image") ? nested : photo;
             if (Property(image, out var thumbnails, "thumbnails") && thumbnails.ValueKind == JsonValueKind.Array)
                 foreach (var thumbnail in thumbnails.EnumerateArray())
                     if (PhotoUrl(thumbnail) is { } preview) return preview;

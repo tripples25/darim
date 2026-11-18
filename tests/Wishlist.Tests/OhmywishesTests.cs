@@ -20,6 +20,32 @@ namespace Wishlist.Tests;
 
 public class OhmywishesTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadsFlatAndWrappedPhotosWithCdnValidation(bool wrapped)
+    {
+        foreach (var thumbnail in new[] { "https://cdn.ohmywish.es/thumb.webp", "https://cdn.ohmywish.es.evil.test/thumb.webp" })
+        {
+            var image = new { url = "https://cdn.ohmywish.es/full.webp", thumbnails = new[] { new { url = thumbnail } } };
+            object photo = wrapped ? new { image } : image;
+            var wish = JsonSerializer.SerializeToElement(new { title = "Book", visibility = "public", photos = new[] { photo } });
+            Assert.Equal(thumbnail.Contains("evil.test") ? image.url : thumbnail,
+                OhmywishesMcp.ReadWish(wish)!.PhotoUrl);
+        }
+    }
+
+    [Theory]
+    [InlineData("https://cdn.ohmywish.es.evil.test/photo.webp")]
+    [InlineData("http://cdn.ohmywish.es/photo.webp")]
+    [InlineData("https://cdn.ohmywish.es:8443/photo.webp")]
+    [InlineData("https://user@cdn.ohmywish.es/photo.webp")]
+    public void RejectsUnsafeFlatPhotoUrls(string url)
+    {
+        var wish = JsonSerializer.SerializeToElement(new { title = "Book", visibility = "public", photos = new[] { new { url } } });
+        Assert.Null(OhmywishesMcp.ReadWish(wish)!.PhotoUrl);
+    }
+
     [Fact]
     public void MapsOnlyShareableOpenWishesAndDoesNotTreatForeignCurrencyAsRubles()
     {
