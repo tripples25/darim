@@ -17,7 +17,7 @@ public class OhmywishesWebTests
     internal const string List = "222222222222222222222222";
     private const string Wish = "333333333333333333333333";
     private const string AnotherWish = "444444444444444444444444";
-    private const string Shared = "9f8b1234-d875-471b-85c3-51068cdfce67";
+    internal const string Shared = "9f8b1234-d875-471b-85c3-51068cdfce67";
 
     [Theory]
     [InlineData("https://ohmywishes.com.evil.test/users/dream/lists/222222222222222222222222")]
@@ -139,6 +139,7 @@ public class OhmywishesWebTests
         public int PhotoDownloads { get; private set; }
         public bool PhotoUnavailable { get; set; }
         public bool IncludeAnotherWish { get; set; }
+        public bool WishReserved { get; set; }
         public string WishTitle { get; set; } = "Книга";
         public string? PhotoUrl { get; set; } = "https://cdn.ohmywish.es/book.webp";
         public int Requests { get; private set; }
@@ -184,6 +185,19 @@ public class OhmywishesWebTests
             if (ListRequiresSignIn && (request.RequestUri.AbsolutePath == root || request.RequestUri.AbsolutePath == sharedRoot))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
             if (request.RequestUri.AbsolutePath == $"/api/v3/wishes/{Wish}") GlobalWishRequests++;
+            if (request.Headers.TryGetValues("x-access-token", out var tokens))
+            {
+                Assert.Equal("test-token", Assert.Single(tokens));
+                var id = request.RequestUri.Segments[^1];
+                Assert.Contains(id, new[] { Wish, AnotherWish });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        item = new { id, isReservedBySomeone = id == Wish && WishReserved, isReservedByMe = false }
+                    })
+                });
+            }
             object result = request.RequestUri.AbsolutePath switch
             {
                 "/api/v3/users/dream" or $"/api/v3/users/{Account}" => new { item = new { id = Account, isPrivate = ProfilePrivate } },
@@ -310,7 +324,7 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
     }
 
     [Fact]
-    public async Task LocalEditsSurviveSyncAndNewWishesAreImported()
+    public async Task OnlyVisibilityCanBeEditedAndItSurvivesSync()
     {
         await using var db = new AppDb(fixture.Options);
         var owner = new AppUser { Name = "Owner", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
@@ -333,10 +347,15 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         await gifts.Change(owner.Id, imported.Id, visibility: new(false, []));
 
         var requests = handler.Requests;
-        var edited = await gifts.Change(owner.Id, imported.Id, new GiftWriteInput(
-            "Моя книга", Price: 1500, Comment: "Новое издание", RemovePhoto: true));
+        var error = await Assert.ThrowsAsync<RuleException>(() => gifts.Change(owner.Id, imported.Id,
+            new GiftWriteInput("Моя книга", Price: 1500, Comment: "Новое издание", RemovePhoto: true,
+                Visibility: new(true, []))));
+        Assert.Equal(403, error.Status);
         Assert.Equal(requests, handler.Requests);
-        Assert.Null(edited.PhotoVersion);
+        var unchanged = Assert.Single(await gifts.Mine(owner.Id));
+        Assert.Equal(imported.Details, unchanged.Details);
+        Assert.Equal(imported.PhotoVersion, unchanged.PhotoVersion);
+        Assert.False(unchanged.Visibility!.AllCompanies);
         handler.WishTitle = "Изменено у источника";
         handler.PhotoUrl = "https://cdn.ohmywish.es/replacement.jpg";
         handler.IncludeAnotherWish = true;
@@ -354,11 +373,51 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
 
         Assert.Equal(2, result.Length);
         var preserved = Assert.Single(result, gift => gift.Id == imported.Id);
-        Assert.Equal(edited.Details, preserved.Details);
-        Assert.Null(preserved.PhotoVersion);
+        Assert.Equal(handler.WishTitle, preserved.Details.Title);
+        Assert.NotNull(preserved.PhotoVersion);
+        Assert.NotEqual(imported.PhotoVersion, preserved.PhotoVersion);
         Assert.False(preserved.Visibility!.AllCompanies);
         Assert.Empty(preserved.Visibility.CompanyIds);
         Assert.True(Assert.Single(result, gift => gift.Details.Title == "Новое желание").Visibility!.AllCompanies);
         Assert.True(Assert.Single(result, gift => gift.Details.Title == "Новое желание").FromOhmywishes);
+    }
+
+    [Fact]
+    public async Task ExternalReservationsAppearForDonorsAndClearAfterTheNextSync()
+    {
+        await using var db = new AppDb(fixture.Options);
+        var owner = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+        var donor = new AppUser { TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+        var company = new Company { Name = "Pilot", InviteHash = Guid.NewGuid().ToString() };
+        db.AddRange(owner, donor, company,
+            new CompanyMembership { UserId = owner.Id, CompanyId = company.Id },
+            new CompanyMembership { UserId = donor.Id, CompanyId = company.Id });
+        await db.SaveChangesAsync();
+
+        var options = new OhmywishesOptions(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Ohmywishes:WebApiEnabled"] = "true",
+                ["Ohmywishes:ReservationToken"] = "test-token"
+            }).Build());
+        using var handler = new OhmywishesWebTests.WebHandler { WishReserved = true };
+        using var http = new HttpClient(handler);
+        var protection = new EphemeralDataProtectionProvider();
+        var reservations = new OhmywishesReservations(http, options);
+        var sync = new OhmywishesSync(db, options, new(options, protection, http), new(http), protection,
+            NullLogger<OhmywishesSync>.Instance, new(http, reservations: reservations));
+        var gifts = new GiftService(db, options, reservations: reservations, protection: protection);
+        await sync.ConnectWeb(owner.Id, $"https://ohmywishes.com/users/dream/lists/{OhmywishesWebTests.Shared}", default);
+        await sync.RunDue(default);
+
+        Assert.Equal("external", Assert.Single(await gifts.List(donor.Id, company.Id)).Participation!.Mode);
+        Assert.Null(Assert.Single(await gifts.Mine(owner.Id)).Participation);
+
+        handler.WishReserved = false;
+        await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
+        await sync.RunDue(default);
+
+        Assert.Equal("free", Assert.Single(await gifts.List(donor.Id, company.Id)).Participation!.Mode);
     }
 }

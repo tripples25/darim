@@ -137,17 +137,12 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
                 throw new RuleException("Архивируйте желание в Ohmywishes.");
             if (input != null)
             {
-                var previousDetails = gift.Details;
+                if (gift.OhmywishesKey != null)
+                    throw new RuleException("Для желания из Ohmywishes в Дарим можно изменить только видимость.", 403);
                 gift.Edit(id, input);
-                if (gift.OhmywishesKey != null && gift.Details != previousDetails)
-                    gift.OhmywishesDetailsEdited = true;
                 if (input is GiftWriteInput write)
                 {
-                    if (gift.OhmywishesKey != null && write.Unlimited)
-                        throw new RuleException("Для импортированного желания нельзя включить отдельные брони.", 400);
                     await UpdatePhoto(gift, write, ct);
-                    if (gift.OhmywishesKey != null && (write.Photo != null || write.RemovePhoto))
-                        gift.OhmywishesPhotoEdited = true;
                     gift.Unlimited = write.Unlimited;
                     if (write.Visibility != null) await UpdateVisibility(gift, write.Visibility);
                 }
