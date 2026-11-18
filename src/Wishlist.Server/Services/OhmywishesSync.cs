@@ -385,12 +385,10 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
                 await StorePhoto(gift, input.PhotoUrl, downloads, ct);
             gift.OhmywishesHidden = false;
         }
-        var company = connection.DefaultCompanyId;
-        if (company != null && !await db.Memberships.AnyAsync(x => x.UserId == userId && x.CompanyId == company, ct))
-            company = null;
         foreach (var item in mapped)
         {
-            var gift = Gift.New(company, user.Id, item.Value.Value.Details);
+            var gift = Gift.New(null, user.Id, item.Value.Value.Details);
+            gift.AllCompanies = true;
             gift.OhmywishesWebId = connection.WebApi ? item.Value.Key : null;
             gift.OhmywishesOccupied = item.Value.Value.Occupied == true;
             gift.OhmywishesKey = item.Key;
