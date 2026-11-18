@@ -255,6 +255,7 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         Assert.Equal(2, visible.Length);
         var imported = Assert.Single(visible, gift => gift.Owner.Id == owner.Id);
         Assert.True(imported.FromOhmywishes);
+        Assert.True(imported.Visibility!.AllCompanies);
         Assert.Null(imported.PhotoUrl);
         Assert.NotNull(imported.PhotoVersion);
         var photo = await gifts.Photo(donor.Id, imported.Id, imported.PhotoVersion.Value, default);
@@ -328,6 +329,8 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         await sync.RunDue(default);
         var imported = Assert.Single(await gifts.Mine(owner.Id));
         Assert.NotNull(imported.PhotoVersion);
+        Assert.True(imported.Visibility!.AllCompanies);
+        await gifts.Change(owner.Id, imported.Id, visibility: new(false, []));
 
         var requests = handler.Requests;
         var edited = await gifts.Change(owner.Id, imported.Id, new GiftWriteInput(
@@ -348,6 +351,9 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         var preserved = Assert.Single(result, gift => gift.Id == imported.Id);
         Assert.Equal(edited.Details, preserved.Details);
         Assert.Null(preserved.PhotoVersion);
+        Assert.False(preserved.Visibility!.AllCompanies);
+        Assert.Empty(preserved.Visibility.CompanyIds);
+        Assert.True(Assert.Single(result, gift => gift.Details.Title == "Новое желание").Visibility!.AllCompanies);
         Assert.True(Assert.Single(result, gift => gift.Details.Title == "Новое желание").FromOhmywishes);
     }
 }
