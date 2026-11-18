@@ -26,7 +26,31 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             connection is { WebApi: false, ProtectedTokens: null },
             connection?.ListId, connection?.ListTitle, connection?.LastSuccess,
             connection?.Stale == true || (!(webConnected ? webEnabled : options.Enabled) && connection?.ListId != null),
-            webEnabled, webConnected);
+            webEnabled, webConnected, ManualSyncSupported: true);
+    }
+
+    public async Task RequestSync(Guid userId, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockCompanyMember(userId, ct);
+        var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
+        if (connection?.ListId == null || (connection.WebApi ? !options.WebApiEnabled
+            : !options.Enabled || connection.ProtectedTokens == null))
+            throw new RuleException("Подключите список Ohmywishes для синхронизации.");
+
+        var now = DateTimeOffset.UtcNow;
+        if (connection.NextSync <= now) return;
+        // Only advance the regular schedule after a successful sync. A worker claim
+        // or provider retry has its own deadline and must not be rescheduled here.
+        if (connection.Stale || connection.LastSuccess is not { } lastSuccess ||
+            connection.NextSync != lastSuccess.Add(options.Interval))
+            throw new RuleException("Обновление уже выполняется или ожидает автоматического повтора.");
+        if (now - lastSuccess < TimeSpan.FromSeconds(30))
+            throw new RuleException("Список только что обновился. Попробуйте чуть позже.", 429);
+
+        connection.NextSync = now;
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 
     public async Task ConnectWeb(Guid userId, string? url, CancellationToken ct, Guid? companyId = null)

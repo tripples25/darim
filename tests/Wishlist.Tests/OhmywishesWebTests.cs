@@ -341,9 +341,14 @@ public class OhmywishesWebPostgresTests(PostgresFixture fixture)
         handler.PhotoUrl = "https://cdn.ohmywish.es/replacement.jpg";
         handler.IncludeAnotherWish = true;
 
+        Assert.Equal(429, (await Assert.ThrowsAsync<RuleException>(() => sync.RequestSync(owner.Id, default))).Status);
+        var lastSuccess = DateTimeOffset.UtcNow.AddMinutes(-1);
         await db.OhmywishesConnections.Where(x => x.UserId == owner.Id)
-            .ExecuteUpdateAsync(update => update.SetProperty(x => x.NextSync, DateTimeOffset.UtcNow));
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.LastSuccess, lastSuccess)
+                .SetProperty(x => x.NextSync, lastSuccess.Add(options.Interval)));
         db.ChangeTracker.Clear();
+        await sync.RequestSync(owner.Id, default);
+        await sync.RequestSync(owner.Id, default);
         await sync.RunDue(default);
         var result = await gifts.Mine(owner.Id);
 

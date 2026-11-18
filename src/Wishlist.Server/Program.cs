@@ -174,6 +174,10 @@ api.MapPost("/ohmywishes/disconnect",async(HttpContext ctx,OhmywishesSync sync)=
  await sync.Disconnect(UserId(ctx),ctx.RequestAborted);
  return Results.NoContent();
 });
+api.MapPost("/ohmywishes/sync",async(HttpContext ctx,OhmywishesSync sync)=>{
+ await sync.RequestSync(UserId(ctx),ctx.RequestAborted);
+ return Results.Accepted();
+}).RequireRateLimiting("auth");
 api.MapGet("/csrf",(HttpContext ctx,IAntiforgery csrf)=>new CsrfDto(csrf.GetAndStoreTokens(ctx).RequestToken!));
 api.MapGet("/me",(HttpContext ctx,AccountService svc)=>svc.Me(UserId(ctx)));
 api.MapPut("/profile",async(HttpContext ctx,ProfileInput input,AccountService svc)=>{await svc.Profile(UserId(ctx),input);return Results.NoContent();});

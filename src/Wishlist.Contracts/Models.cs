@@ -15,7 +15,7 @@ public record GiftWriteInput(string Title, string? Url = null, decimal? Price = 
 }
 public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null,
     bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool Unlimited = false);
-public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false);
+public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false, bool ManualSyncSupported = false);
 public record OhmywishesListDto(string Id, string Title);
 public record OhmywishesSelection(string ListId, Guid? CompanyId = null);
 public record OhmywishesAuthorization(string Url);
