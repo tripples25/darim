@@ -156,7 +156,10 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             if (visibility != null) await UpdateVisibility(gift, visibility);
         }
 
-        var recipients = before.Concat(gift.Donors()).Distinct().Where(x => x != gift.OwnerId);
+        var sendToTelegram = input != null || visibility != null || archive == true
+            || action?.Action is "join" or "close-split";
+        var recipients = before.Concat(gift.Donors()).Distinct()
+            .Where(x => x != gift.OwnerId && (x != id || sendToTelegram));
         var verb = input != null ? "Желание изменено" : archive == true ? "Желание отправлено в архив"
             : visibility != null ? "Видимость желания изменена" : restored ? "Желание возвращено из архива" : action?.Action switch
         {
@@ -170,7 +173,12 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         };
         if (input != null || visibility != null || archive == true || restored || action != null && !gift.Unlimited)
             foreach (var recipient in recipients)
-                db.Notices.Add(new() { UserId = recipient, TelegramNextAttempt = DateTimeOffset.UtcNow, Text = $"{verb}: «{gift.Title}»." });
+                db.Notices.Add(new()
+                {
+                    UserId = recipient,
+                    TelegramNextAttempt = sendToTelegram ? DateTimeOffset.UtcNow : null,
+                    Text = $"{verb}: «{gift.Title}»."
+                });
         if (sharing != null) await sharing.Reconcile(gift, ct);
         await db.SaveChangesAsync(ct);
         // The same remote wish can be imported by different Darim users.
