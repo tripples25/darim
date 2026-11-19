@@ -11,6 +11,18 @@ steps:
     commands:
       - sh ops/woodpecker-build.sh
 
+  - name: read-production-revision
+    image: alpine:3.22
+    failure: ignore
+    commands:
+      - apk add --no-cache curl jq
+      - |
+        response=$(curl -fsS --max-time 10 https://wishes.hype-ny.ru/deployment.json) || response='{}'
+        printf '%s\n' "$response" | jq -r '.current.commit // empty' > .previous-production
+    when:
+      - event: push
+        branch: main
+
   - name: publish-verified-image
     image: docker:27-cli
     volumes:
@@ -29,3 +41,38 @@ steps:
     when:
       - event: push
         branch: main
+
+  - name: telegram-api-release
+    image: alpine:3.22
+    failure: ignore
+    environment:
+      TELEGRAM_BOT_TOKEN:
+        from_secret: telegram_bot_token
+      TELEGRAM_LICKREAL_ID:
+        from_secret: telegram_lickreal_id
+      TELEGRAM_SHARPHURT_ID:
+        from_secret: telegram_sharphurt_id
+    commands:
+      - apk add --no-cache curl jq git
+      - git fetch --unshallow origin || git fetch origin
+      - sh ops/telegram-ci.sh release
+    when:
+      - event: push
+        branch: main
+        status: [success]
+
+  - name: telegram-pipeline-failure
+    image: alpine:3.22
+    failure: ignore
+    environment:
+      TELEGRAM_BOT_TOKEN:
+        from_secret: telegram_bot_token
+      TELEGRAM_LICKREAL_ID:
+        from_secret: telegram_lickreal_id
+      TELEGRAM_SHARPHURT_ID:
+        from_secret: telegram_sharphurt_id
+    commands:
+      - apk add --no-cache curl jq
+      - sh ops/telegram-ci.sh failure
+    when:
+      - status: [failure]
