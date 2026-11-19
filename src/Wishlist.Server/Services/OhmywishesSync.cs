@@ -83,6 +83,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             throw new RuleException("Подключение изменилось. Попробуйте ещё раз.");
         if (connection == null)
         {
+            await DeleteImportedGifts(userId, ct);
             connection = new() { UserId = userId, WebApi = true, DefaultCompanyId = companyId };
             db.OhmywishesConnections.Add(connection);
         }
@@ -127,6 +128,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         var connection = await db.OhmywishesConnections.FindAsync([userId], ct);
         if (connection == null)
         {
+            await DeleteImportedGifts(userId, ct);
             connection = new() { UserId = userId, AccountId = account };
             db.OhmywishesConnections.Add(connection);
         }
@@ -181,7 +183,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         user.OhmywishesAttempt = null;
         if (await db.OhmywishesConnections.FindAsync([userId], ct) is { } connection)
             db.OhmywishesConnections.Remove(connection);
-        await HideGifts(userId, ct);
+        await DeleteImportedGifts(userId, ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         logger.LogInformation("Ohmywishes disconnected for user {UserId}.", userId);
@@ -476,13 +478,26 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         return gifts;
     }
 
-    private async Task HideGifts(Guid userId, CancellationToken ct)
+    private async Task DeleteImportedGifts(Guid userId, CancellationToken ct)
     {
-        foreach (var gift in await LockGifts(userId, ct))
+        var gifts = await HideGifts(userId, ct);
+        if (gifts.Count == 0) return;
+
+        var giftIds = gifts.Select(gift => gift.Id).ToArray();
+        var requests = db.Set<WishlistReservation>();
+        requests.RemoveRange(await requests.Where(request => giftIds.Contains(request.GiftId)).ToListAsync(ct));
+        db.Gifts.RemoveRange(gifts);
+    }
+
+    private async Task<List<Gift>> HideGifts(Guid userId, CancellationToken ct)
+    {
+        var gifts = await LockGifts(userId, ct);
+        foreach (var gift in gifts)
         {
             Hide(gift);
             if (sharing != null) await sharing.Reconcile(gift, ct);
         }
+        return gifts;
     }
 
     private void Hide(Gift gift)
