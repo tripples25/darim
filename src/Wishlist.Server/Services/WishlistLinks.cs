@@ -62,6 +62,22 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
         await tx.CommitAsync(ct);
     }
 
+    internal async Task RevokeForCompany(Guid companyId, CancellationToken ct)
+    {
+        // Updating the links locks out new submissions before we read their queues.
+        var now = Now;
+        var companyLinks = Links.Where(x => x.CompanyId == companyId);
+        await companyLinks.ExecuteUpdateAsync(update => update.SetProperty(x => x.Revoked, x => x.Revoked ?? now), ct);
+        var gifts = await Requests.Where(x => (x.Status == Held || x.Status == Waiting) &&
+                companyLinks.Any(link => link.Id == x.LinkId))
+            .Select(x => x.GiftId).Distinct().OrderBy(x => x).ToArrayAsync(ct);
+        foreach (var giftId in gifts)
+        {
+            if (await LockGift(giftId, ct) is { } gift) await Reconcile(gift, ct);
+        }
+        await companyLinks.ExecuteUpdateAsync(update => update.SetProperty(x => x.CompanyId, (Guid?)null), ct);
+    }
+
     public async Task<PublicWishlistDto> View(string token, CancellationToken ct)
     {
         var link = LinkByToken(token);
