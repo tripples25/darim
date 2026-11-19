@@ -150,7 +150,7 @@ public class OhmywishesTests
 public class OhmywishesPostgresTests(PostgresFixture fixture)
 {
     [Fact]
-    public async Task ImportUpdatesReservedGiftAtomicallyAndHidesItWhenPrivateOrDisconnected()
+    public async Task ImportUpdatesReservedGiftUntilDisconnectAndStartsOverOnReconnect()
     {
         using var provider = new FakeOhmywishes();
         using var http = new HttpClient(provider);
@@ -219,12 +219,44 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         await RunNow();
         Assert.Equal(gift.Id, Assert.Single(await service.List(donor.Id)).Id);
 
+        await service.Change(owner.Id, gift.Id, visibility: new(false, []));
+        var localGift = await service.Create(owner.Id, new GiftInput("Обычное желание"));
+        var hidden = Gift.New(null, owner.Id, new GiftInput("Скрытый импорт"));
+        hidden.OhmywishesKey = "hidden-wish";
+        hidden.OhmywishesHidden = true;
+        var link = new WishlistLink { OwnerId = owner.Id, TokenHash = Guid.NewGuid().ToString("N") };
+        var request = new WishlistReservation
+        {
+            GiftId = gift.Id, GuestId = outsider.Id, LinkId = link.Id, Status = WishlistReservation.Closed
+        };
+        db.AddRange(hidden, link, request, new GiftPhoto { GiftId = gift.Id, Data = [1], ContentType = "image/png" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
         var pending = await sync.BeginAuthorization(owner.Id, default);
         await sync.Disconnect(owner.Id, default);
-        Assert.Empty(await service.List(donor.Id));
         Assert.False(await db.OhmywishesConnections.AnyAsync(x => x.UserId == owner.Id));
+        Assert.Equal(localGift.Id, Assert.Single(await service.Mine(owner.Id)).Id);
+        Assert.Empty(await service.Giving(donor.Id));
+        Assert.False(await db.Gifts.AnyAsync(x => x.OwnerId == owner.Id && x.OhmywishesKey != null));
+        Assert.False(await db.GiftPhotos.AnyAsync(x => x.GiftId == gift.Id));
+        Assert.False(await db.Set<WishlistReservation>().AnyAsync(x => x.GiftId == gift.Id));
         await Assert.ThrowsAsync<RuleException>(() => sync.Connect(owner.Id, pending, tokens, default));
-        Assert.True((await db.Gifts.AsNoTracking().SingleAsync(x => x.Id == gift.Id)).Bought);
+
+        // Simulate a card left by an older version that only hid wishes on disconnect.
+        db.Add(hidden);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var reconnect = await sync.BeginAuthorization(owner.Id, default);
+        await sync.Connect(owner.Id, reconnect, tokens, default);
+        await sync.Select(owner.Id, "list", default, company.Id);
+        await sync.RunDue(default);
+        Assert.False(await db.Gifts.AnyAsync(x => x.Id == hidden.Id));
+        var reimported = Assert.Single(await service.List(donor.Id), item => item.FromOhmywishes);
+        Assert.NotEqual(gift.Id, reimported.Id);
+        Assert.Equal("Новая книга", reimported.Details.Title);
+        Assert.Equal("free", reimported.Participation!.Mode);
+        Assert.True(Assert.Single(await service.Mine(owner.Id), item => item.FromOhmywishes).Visibility!.AllCompanies);
 
         async Task RunNow()
         {
