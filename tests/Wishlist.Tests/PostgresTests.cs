@@ -16,6 +16,63 @@ public class PostgresCollection:ICollectionFixture<PostgresFixture>{}
 [Collection("Postgres")]
 public class PostgresTests(PostgresFixture fixture) {
  [Fact]
+ public async Task DeletingCompanyRevokesItsLinksAndKeepsPersonalWishesAndReservations()
+ {
+  var (owner, alice, bob, carol, _) = await Setup();
+  Guid companyId, otherCompanyId, giftId, linkId;
+  string inviteToken, linkToken;
+  await using (var db = new AppDb(fixture.Options))
+  {
+   var company = await db.Companies.SingleAsync(c => db.Memberships.Any(m => m.CompanyId == c.Id && m.UserId == owner));
+   company.OrganizerId = owner;
+   await db.SaveChangesAsync();
+   companyId = company.Id;
+   var accounts = new AccountService(db);
+   otherCompanyId = (await accounts.Create(owner, "Другая компания")).CompanyId!.Value;
+   inviteToken = (await accounts.Invite(owner, null, companyId)).Token;
+   var gift = await new GiftService(db).Create(owner,
+    new GiftWriteInput("Желание", Visibility: new(false, [companyId, otherCompanyId])));
+   giftId = gift.Id;
+   var links = new WishlistLinks(db);
+   var link = await links.Create(owner, new(CompanyId: companyId), default);
+   linkId = link.Link.Id;
+   linkToken = link.Token;
+   var pendingGift = await new GiftService(db).Create(owner,
+    new GiftWriteInput("Желание с заявкой", Visibility: new(false, [companyId])));
+   await links.Submit(carol, linkToken, pendingGift.Id, new(false), default);
+   Assert.Single(await links.ForGuest(carol, default));
+  }
+  Assert.True(await Try(alice, giftId, "split"));
+  Assert.True(await Try(bob, giftId, "join"));
+
+  await using (var db = new AppDb(fixture.Options))
+  {
+   var accounts = new AccountService(db);
+   var links = new WishlistLinks(db);
+   var error = await Assert.ThrowsAsync<RuleException>(() => accounts.Delete(alice, companyId, links, default));
+   Assert.Equal(404, error.Status);
+   await accounts.Delete(owner, companyId, links, default);
+  }
+
+  await using (var db = new AppDb(fixture.Options))
+  {
+   var accounts = new AccountService(db);
+   Assert.False(await db.Companies.AnyAsync(x => x.Id == companyId));
+   Assert.Equal(otherCompanyId, (await accounts.Me(owner)).Company!.Id);
+   Assert.Empty((await accounts.Me(alice)).Companies!);
+   var gifts = new GiftService(db);
+   var wish = Assert.Single(await gifts.Mine(owner), x => x.Id == giftId);
+   Assert.Equal(otherCompanyId, Assert.Single(wish.Visibility!.CompanyIds));
+   Assert.Equal(2, Assert.Single(await gifts.Giving(alice), x => x.Id == giftId).Participation!.Taken);
+   Assert.False(await JoinInvite(carol, inviteToken));
+   var links = new WishlistLinks(db);
+   Assert.NotNull(Assert.Single(await links.List(owner, default), x => x.Id == linkId).Revoked);
+   Assert.Empty(await links.ForGuest(carol, default));
+   await Assert.ThrowsAsync<RuleException>(() => links.View(linkToken, default));
+  }
+ }
+
+ [Fact]
  public async Task UnlimitedGiftSupportsConcurrentIndependentReservations()
  {
   var (owner, alice, bob, carol, _) = await Setup();

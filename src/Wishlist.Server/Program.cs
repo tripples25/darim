@@ -188,6 +188,10 @@ api.MapPost("/company/join",async(HttpContext ctx,JoinCompanyInput input,bool? r
  return returnCompany==true?Results.Ok(new CompanyJoinDto(id)):Results.NoContent();
 });
 api.MapPost("/company/invite",(HttpContext ctx,InviteOptions? input,AccountService svc)=>svc.Invite(UserId(ctx),input is null?1:input.MaxUses,input?.CompanyId));
+api.MapDelete("/company/{companyId:guid}",async(HttpContext ctx,Guid companyId,AccountService svc,WishlistLinks links)=>{
+ await svc.Delete(UserId(ctx),companyId,links,ctx.RequestAborted);
+ return Results.NoContent();
+});
 api.MapGet("/gifts", (HttpContext ctx, Guid? companyId, GiftService svc, bool includeMine = true) =>
     svc.List(UserId(ctx), companyId, includeMine));
 api.MapGet("/gifts/mine",(HttpContext ctx,GiftService svc)=>svc.Mine(UserId(ctx)));

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Wishlist.Contracts;
 using Wishlist.Core;
 using Wishlist.Server.Data;
@@ -81,6 +82,33 @@ public class AccountService(AppDb db) {
   await db.SaveChangesAsync();
   await tx.CommitAsync();
   return new(token,company.Id);
+ }
+
+ public async Task Delete(Guid userId, Guid companyId, WishlistLinks links, CancellationToken ct)
+ {
+  await using var tx = await db.Database.BeginTransactionAsync(ct);
+  try
+  {
+   var company = await db.Companies.FromSqlInterpolated($"""
+    SELECT * FROM "Companies" WHERE "Id"={companyId} AND "OrganizerId"={userId} FOR UPDATE NOWAIT
+    """).SingleOrDefaultAsync(ct)
+    ?? throw new RuleException("Компания не найдена или вы не её организатор.",404);
+
+   await links.RevokeForCompany(companyId, ct);
+   await db.Users.Where(x => x.CompanyId == companyId)
+    .ExecuteUpdateAsync(update => update.SetProperty(x => x.CompanyId, (Guid?)null), ct);
+   // Keep existing reservations available to their donors after the company board is gone.
+   await db.Gifts.Where(x => x.CompanyId == companyId)
+    .ExecuteUpdateAsync(update => update.SetProperty(x => x.CompanyId, (Guid?)null), ct);
+   db.Companies.Remove(company);
+   await db.SaveChangesAsync(ct);
+   await tx.CommitAsync(ct);
+  }
+  catch (Exception error) when ((error as PostgresException ?? error.InnerException as PostgresException)?.SqlState
+   is PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.LockNotAvailable)
+  {
+   throw new RuleException("Компания сейчас обновляется. Повторите удаление.",409);
+  }
  }
 
  internal async Task<Guid> ResolveCompany(Guid userId,Guid? companyId){
