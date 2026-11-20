@@ -114,7 +114,7 @@ app.Use(async(ctx,next)=>{
 if(!app.Environment.IsDevelopment())app.UseHsts();
 app.UseStaticFiles();app.UseRateLimiter();app.UseAuthentication();app.UseAuthorization();
 app.MapGet("/health",async(AppDb db)=>await db.Database.CanConnectAsync()?Results.Ok(new{status="ok"}):Results.StatusCode(503));
-app.MapGet("/api/auth-info",()=>new AuthInfoDto(AuthSetup.TelegramConfigured(app.Configuration),demo,app.Configuration["Telegram:BotUsername"],app.Configuration.GetValue<bool>("Telegram:CodeLoginEnabled")&&!string.IsNullOrWhiteSpace(app.Configuration["Telegram:BotToken"])));
+app.MapGet("/api/auth-info",()=>new AuthInfoDto(AuthSetup.TelegramConfigured(app.Configuration),demo,app.Configuration["Telegram:BotUsername"],app.Configuration.GetValue<bool>("Telegram:CodeLoginEnabled")&&!string.IsNullOrWhiteSpace(app.Configuration["Telegram:BotToken"]),TelegramLoginCodes.Length));
 app.MapGet("/auth/login",(string? returnTo)=>AuthSetup.TelegramConfigured(app.Configuration)?Results.Challenge(new AuthenticationProperties{RedirectUri=returnTo=="share"?"/share":"/"},["Telegram"]):Results.Problem("Настройте Telegram-вход.",statusCode:503)).RequireRateLimiting("auth");
 app.MapPost("/auth/code",async(CodeLoginInput input,HttpContext ctx,TelegramLoginCodes codes,AccountService accounts)=>{
  if(!app.Configuration.GetValue<bool>("Telegram:CodeLoginEnabled")||string.IsNullOrWhiteSpace(app.Configuration["Telegram:BotToken"]))return Results.StatusCode(503);

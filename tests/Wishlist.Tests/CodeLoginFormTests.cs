@@ -14,8 +14,8 @@ public class CodeLoginFormTests:BunitContext {
   var handler=new Handler();Services.AddSingleton(new Api(new HttpClient(handler){BaseAddress=new("https://localhost")}));
   bool signedIn=false;
   var form=Render<CodeLogin>(p=>p.Add(x=>x.Enabled,true).Add(x=>x.OnSignedIn,()=>signedIn=true));
-  form.Find("input").Input("abcdef123456");await form.Find("form").SubmitAsync();
-  form.WaitForAssertion(()=>Assert.True(signedIn));Assert.Equal("abcdef123456",handler.Code);Assert.Equal("",form.Find("input").GetAttribute("value"));
+  form.Find("input").Input("012345");await form.Find("form").SubmitAsync();
+  form.WaitForAssertion(()=>Assert.True(signedIn));Assert.Equal("012345",handler.Code);Assert.Equal("",form.Find("input").GetAttribute("value"));
  }
  sealed class Handler:HttpMessageHandler {
   public string? Code;

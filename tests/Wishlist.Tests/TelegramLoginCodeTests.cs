@@ -5,7 +5,8 @@ public class TelegramLoginCodeTests {
  readonly TelegramIdentity user = new(123, "Юлия", "julia");
  [Fact] public void CodeIsSingleUse() {
   var store=new TelegramLoginCodes(TimeProvider.System);var code=store.Issue(user)!;
-  Assert.Equal(user,store.Consume(code.ToLowerInvariant()));
+  Assert.Matches("^[0-9]{6}$", code);
+  Assert.Equal(user,store.Consume(code));
   Assert.Throws<RuleException>(()=>store.Consume(code));
  }
  [Fact] public void CooldownSurvivesRedemption(){
