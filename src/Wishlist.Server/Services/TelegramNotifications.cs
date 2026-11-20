@@ -76,11 +76,8 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
             if (!notice.OpenOwnerBoard) rows.Add([Button("Открыть желание", "gift", gift)]);
             if (notice.IncludesSplit) rows.Add([Button("Детали распила", "split", gift)]);
         }
-        if (notice.PersonId is { } person)
-        {
-            if (notice.OpenOwnerBoard) rows.Insert(0, [Button($"Другие желания {ownerName}".TrimEnd(), "owner", person)]);
-            rows.Add([Button("Открыть профиль", "person", person)]);
-        }
+        if ((notice.OpenOwnerBoard || notice.GiftId == null) && notice.PersonId is { } person)
+            rows.Insert(0, [Button($"Другие желания {RussianName.Genitive(ownerName)}".TrimEnd(), "owner", person)]);
         return rows.Count == 0 ? null : new { inline_keyboard = rows };
     }
 
@@ -95,7 +92,7 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
         notice.TelegramNextAttempt = null;
         if (chat > 0)
         {
-            var ownerName = notice.OpenOwnerBoard && notice.PersonId is { } owner
+            var ownerName = (notice.OpenOwnerBoard || notice.GiftId == null) && notice.PersonId is { } owner
                 ? await db.Users.Where(u => u.Id == owner).Select(u => u.Name).SingleOrDefaultAsync(ct)
                 : null;
             using var client = clients.CreateClient("telegram-login");
