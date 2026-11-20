@@ -47,7 +47,7 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
                 .Select(m => m.UserId).Distinct().ToArrayAsync(ct);
             foreach (var recipient in recipients)
                 db.Notices.Add(new() { UserId = recipient, PersonId = user.Id, TelegramNextAttempt = clock.GetUtcNow(),
-                    Text = $"Скоро день рождения у {user.Name} — {birthday:dd.MM}. Самое время выбрать подарок!" });
+                    Text = $"🎂 Скоро день рождения у {user.Name} — {birthday:dd.MM}. Самое время выбрать подарок!" });
             user.BirthdayReminderYear = birthday.Year;
         }
         await db.SaveChangesAsync(ct);

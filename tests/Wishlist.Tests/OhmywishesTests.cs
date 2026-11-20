@@ -211,7 +211,7 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         foreach (var participant in new[] { donor, otherDonor })
         {
             var notice = await db.Notices.SingleAsync(n => n.UserId == participant.Id &&
-                n.Text.StartsWith("В Ohmywishes обновилось желание"));
+                n.Text.StartsWith("🔄 В Ohmywishes обновилось желание"));
             Assert.Contains("«Новая книга»", notice.Text);
             Assert.Contains($"Владелец: {owner.Name}", notice.Text);
             Assert.Contains("Название: «Книга» → «Новая книга».", notice.Text);
@@ -228,7 +228,7 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         Assert.True(Assert.Single(await service.Giving(donor.Id)).Participation!.Bought);
         Assert.Equal(409, (await Assert.ThrowsAsync<RuleException>(
             () => service.Change(donor.Id, gift.Id, action: new GiftActionInput("cancel")))).Status);
-        Assert.True(await db.Notices.AnyAsync(x => x.UserId == donor.Id && x.Text.Contains("больше недоступно")));
+        Assert.True(await db.Notices.AnyAsync(x => x.UserId == donor.Id && x.Text.StartsWith("🙈 Желание") && x.Text.Contains("больше недоступно")));
         provider.WishPrivate = false;
         await RunNow();
         Assert.Equal(gift.Id, Assert.Single(await service.List(donor.Id)).Id);

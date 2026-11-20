@@ -66,18 +66,18 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
             var archived = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.Contains("в архиве"));
             Assert.Equal(new[] { "Другие желания Именинник", "Открыть профиль" }, archived.Labels);
             Assert.Contains($"https://wishes.hype-ny.ru/?open=owner&id={owner.Id:D}", archived.Urls);
-            var hidden = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("Видимость желания"));
+            var hidden = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("👁️ Видимость желания"));
             Assert.Contains("Другие желания Именинник", hidden.Labels);
             Assert.DoesNotContain("Открыть желание", hidden.Labels);
-            var joined = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("К распилу подарка"));
+            var joined = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("👥 К распилу подарка"));
             Assert.Equal(new[] { "Открыть желание", "Детали распила", "Открыть профиль" }, joined.Labels);
             Assert.Contains(joined.Urls, url => url.StartsWith("https://wishes.hype-ny.ru/?open=split&id="));
             Assert.Equal(13, telegram.Sent.Count);
             Assert.DoesNotContain(telegram.Sent, m => m.Chat == owner.TelegramId || m.Chat == outsider.TelegramId);
-            Assert.StartsWith("Скоро день рождения", Assert.Single(telegram.Sent, m => m.Chat == observer.TelegramId).Text);
+            Assert.StartsWith("🎂 Скоро день рождения", Assert.Single(telegram.Sent, m => m.Chat == observer.TelegramId).Text);
             foreach (var recipient in new[] { coordinator, participant })
-                foreach (var prefix in new[] { "К распилу подарка", "Сбор на подарок", "Желание изменено",
-                    "Видимость желания", "Желание «Обновлённое желание» в архиве", "Скоро день рождения" })
+                foreach (var prefix in new[] { "👥 К распилу подарка", "✅ Сбор на подарок", "✏️ Желание изменено",
+                    "👁️ Видимость желания", "📦 Желание «Обновлённое желание» в архиве", "🎂 Скоро день рождения" })
                     Assert.Single(telegram.Sent, m => m.Chat == recipient.TelegramId && m.Text.StartsWith(prefix));
         }
         finally { await worker.StopAsync(CancellationToken.None); }
