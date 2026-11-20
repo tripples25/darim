@@ -315,6 +315,10 @@ namespace Wishlist.Server.Data.Migrations
 
                     b.Property<DateTimeOffset?>("TelegramNextAttempt").HasColumnType("timestamp with time zone");
                     b.Property<int>("TelegramAttempts").HasColumnType("integer");
+                    b.Property<Guid?>("GiftId").HasColumnType("uuid");
+                    b.Property<Guid?>("PersonId").HasColumnType("uuid");
+                    b.Property<bool>("IncludesSplit").HasColumnType("boolean");
+                    b.Property<bool>("OpenOwnerBoard").HasColumnType("boolean");
                     b.Property<bool>("Read")
                         .HasColumnType("boolean");
 

@@ -46,7 +46,7 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
             var recipients = await db.Memberships.Where(m => companies.Contains(m.CompanyId) && m.UserId != user.Id)
                 .Select(m => m.UserId).Distinct().ToArrayAsync(ct);
             foreach (var recipient in recipients)
-                db.Notices.Add(new() { UserId = recipient, TelegramNextAttempt = clock.GetUtcNow(),
+                db.Notices.Add(new() { UserId = recipient, PersonId = user.Id, TelegramNextAttempt = clock.GetUtcNow(),
                     Text = $"Скоро день рождения у {user.Name} — {birthday:dd.MM}. Самое время выбрать подарок!" });
             user.BirthdayReminderYear = birthday.Year;
         }
@@ -61,6 +61,29 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
         return date < today ? InYear(today.Year + 1) : date;
     }
 
+    private object? Buttons(Notice notice, string? ownerName)
+    {
+        var configuredOrigin = config["Telegram:SiteOrigin"] ?? "https://wishes.hype-ny.ru";
+        if (!Uri.TryCreate(configuredOrigin, UriKind.Absolute, out var origin) || origin.Scheme != Uri.UriSchemeHttps
+            || origin.UserInfo.Length != 0) return null;
+
+        var rows = new List<object[]>();
+        object Button(string label, string kind, Guid id) =>
+            new { text = label, url = new Uri(origin, $"/?open={kind}&id={id:D}").AbsoluteUri };
+
+        if (notice.GiftId is { } gift)
+        {
+            if (!notice.OpenOwnerBoard) rows.Add([Button("Открыть желание", "gift", gift)]);
+            if (notice.IncludesSplit) rows.Add([Button("Детали распила", "split", gift)]);
+        }
+        if (notice.PersonId is { } person)
+        {
+            if (notice.OpenOwnerBoard) rows.Insert(0, [Button($"Другие желания {ownerName}".TrimEnd(), "owner", person)]);
+            rows.Add([Button("Открыть профиль", "person", person)]);
+        }
+        return rows.Count == 0 ? null : new { inline_keyboard = rows };
+    }
+
     private async Task<bool> Deliver(AppDb db, string token, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -72,9 +95,12 @@ public sealed class TelegramNotifications(IServiceScopeFactory scopes, IHttpClie
         notice.TelegramNextAttempt = null;
         if (chat > 0)
         {
+            var ownerName = notice.OpenOwnerBoard && notice.PersonId is { } owner
+                ? await db.Users.Where(u => u.Id == owner).Select(u => u.Name).SingleOrDefaultAsync(ct)
+                : null;
             using var client = clients.CreateClient("telegram-login");
             using var response = await client.PostAsJsonAsync($"https://api.telegram.org/bot{token}/sendMessage",
-                new { chat_id = chat, text = notice.Text }, ct);
+                new { chat_id = chat, text = notice.Text, reply_markup = Buttons(notice, ownerName) }, ct);
             if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.Forbidden && response.StatusCode != System.Net.HttpStatusCode.BadRequest)
             {
                 notice.TelegramAttempts++;

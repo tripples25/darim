@@ -63,12 +63,21 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
             while (await db.Notices.AnyAsync(n => n.TelegramNextAttempt != null, timeout.Token))
                 await Task.Delay(25, timeout.Token);
 
+            var archived = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.Contains("в архиве"));
+            Assert.Equal(new[] { "Другие желания Именинник", "Открыть профиль" }, archived.Labels);
+            Assert.Contains($"https://wishes.hype-ny.ru/?open=owner&id={owner.Id:D}", archived.Urls);
+            var hidden = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("Видимость желания"));
+            Assert.Contains("Другие желания Именинник", hidden.Labels);
+            Assert.DoesNotContain("Открыть желание", hidden.Labels);
+            var joined = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("К распилу подарка"));
+            Assert.Equal(new[] { "Открыть желание", "Детали распила", "Открыть профиль" }, joined.Labels);
+            Assert.Contains(joined.Urls, url => url.StartsWith("https://wishes.hype-ny.ru/?open=split&id="));
             Assert.Equal(13, telegram.Sent.Count);
             Assert.DoesNotContain(telegram.Sent, m => m.Chat == owner.TelegramId || m.Chat == outsider.TelegramId);
             Assert.StartsWith("Скоро день рождения", Assert.Single(telegram.Sent, m => m.Chat == observer.TelegramId).Text);
             foreach (var recipient in new[] { coordinator, participant })
-                foreach (var prefix in new[] { "К распилу присоединился", "Сбор участников завершён", "Желание изменено",
-                    "Видимость желания изменена", "Желание отправлено в архив", "Скоро день рождения" })
+                foreach (var prefix in new[] { "К распилу подарка", "Сбор на подарок", "Желание изменено",
+                    "Видимость желания", "Желание «Обновлённое желание» в архиве", "Скоро день рождения" })
                     Assert.Single(telegram.Sent, m => m.Chat == recipient.TelegramId && m.Text.StartsWith(prefix));
         }
         finally { await worker.StopAsync(CancellationToken.None); }
@@ -76,7 +85,7 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
 
     private sealed class CapturingTelegram : HttpMessageHandler, IHttpClientFactory
     {
-        public ConcurrentQueue<(long Chat, string Text)> Sent { get; } = new();
+        public ConcurrentQueue<(long Chat, string Text, string[] Labels, string[] Urls)> Sent { get; } = new();
         public HttpClient CreateClient(string name) => new(this, disposeHandler: false);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -84,7 +93,11 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.Equal("https://api.telegram.org/bottest-token/sendMessage", request.RequestUri!.AbsoluteUri);
             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
-            Sent.Enqueue((body.RootElement.GetProperty("chat_id").GetInt64(), body.RootElement.GetProperty("text").GetString()!));
+            var buttons = body.RootElement.GetProperty("reply_markup").GetProperty("inline_keyboard")
+                .EnumerateArray().SelectMany(row => row.EnumerateArray()).ToArray();
+            Sent.Enqueue((body.RootElement.GetProperty("chat_id").GetInt64(), body.RootElement.GetProperty("text").GetString()!,
+                buttons.Select(button => button.GetProperty("text").GetString()!).ToArray(),
+                buttons.Select(button => button.GetProperty("url").GetString()!).ToArray()));
             return new(HttpStatusCode.OK) { Content = new StringContent("""{"ok":true}""") };
         }
     }

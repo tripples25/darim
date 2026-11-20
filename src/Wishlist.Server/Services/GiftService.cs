@@ -79,6 +79,9 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         await db.Entry(gift).Collection(g => g.Shares).LoadAsync(ct);
         await db.Entry(gift).Collection(g => g.Publications).LoadAsync(ct);
         var before = gift.Donors();
+        var wasSplit = gift.Mode == "split";
+        var previousVisibility = gift.Publications.Select(p => p.CompanyId).ToHashSet();
+        var previouslyAllCompanies = gift.AllCompanies;
         Guid? company = null;
         string? reservePath = null, cancelPath = null;
         var restored = false;
@@ -156,7 +159,18 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             if (visibility != null) await UpdateVisibility(gift, visibility);
         }
 
-        var sendToTelegram = input != null || visibility != null || archive == true
+        var visibilityChanged = previouslyAllCompanies != gift.AllCompanies
+            || !previousVisibility.SetEquals(gift.Publications.Select(p => p.CompanyId));
+        var stillVisibleTo = new HashSet<Guid>();
+        if (visibilityChanged && archive != true && before.Length > 0)
+        {
+            var published = gift.Publications.Select(p => p.CompanyId).ToArray();
+            var ownerCompanies = db.Memberships.Where(m => m.UserId == gift.OwnerId).Select(m => m.CompanyId);
+            stillVisibleTo = (await db.Memberships.Where(m => before.Contains(m.UserId)
+                && ownerCompanies.Contains(m.CompanyId) && (gift.AllCompanies || published.Contains(m.CompanyId)))
+                .Select(m => m.UserId).ToArrayAsync(ct)).ToHashSet();
+        }
+        var sendToTelegram = input != null || visibilityChanged || archive == true
             || action?.Action is "join" or "close-split";
         var recipients = before.Concat(gift.Donors()).Distinct()
             .Where(x => x != gift.OwnerId && (x != id || sendToTelegram));
@@ -171,13 +185,25 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
             "transfer" => "Координатор распила изменён",
             _ => "Состав распила обновлён"
         };
+        var title = $"«{gift.Title}»";
+        var noticeText = archive == true
+            ? $"Желание {title} в архиве. Владелец: {user.Name}. Бронирования сняты."
+            : visibilityChanged ? $"Видимость желания {title} изменена. Владелец: {user.Name}. Участие сохраняется."
+            : input != null ? $"Желание изменено: {title}. Владелец: {user.Name}. Проверьте детали перед покупкой."
+            : action?.Action == "join"
+                ? $"К распилу подарка {title} присоединился новый участник: {user.Name}. Сумма доли могла измениться."
+                : $"Сбор на подарок {title} завершён. Посмотрите сумму своей доли и список участников.";
         if (input != null || visibility != null || archive == true || restored || action != null && !gift.Unlimited)
             foreach (var recipient in recipients)
                 db.Notices.Add(new()
                 {
                     UserId = recipient,
                     TelegramNextAttempt = sendToTelegram ? DateTimeOffset.UtcNow : null,
-                    Text = $"{verb}: «{gift.Title}»."
+                    GiftId = sendToTelegram ? gift.Id : null,
+                    PersonId = sendToTelegram ? id : null,
+                    OpenOwnerBoard = archive == true || visibilityChanged && !stillVisibleTo.Contains(recipient),
+                    IncludesSplit = sendToTelegram && wasSplit && archive != true,
+                    Text = sendToTelegram ? noticeText : $"{verb}: «{gift.Title}»."
                 });
         if (sharing != null) await sharing.Reconcile(gift, ct);
         await db.SaveChangesAsync(ct);

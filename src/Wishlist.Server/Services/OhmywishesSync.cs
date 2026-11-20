@@ -504,13 +504,17 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     {
         if (gift.OhmywishesHidden) return;
         gift.OhmywishesHidden = true;
-        Notify(gift, "Одно из желаний Ohmywishes, которое вы выбрали, больше недоступно.");
+        Notify(gift, $"Желание «{gift.Title}» больше недоступно в Ohmywishes.", openOwnerBoard: true);
     }
 
-    private void Notify(Gift gift, string text)
+    private void Notify(Gift gift, string text, bool openOwnerBoard = false)
     {
         foreach (var donor in gift.Donors())
-            db.Notices.Add(new() { UserId = donor, TelegramNextAttempt = DateTimeOffset.UtcNow, Text = text });
+            db.Notices.Add(new()
+            {
+                UserId = donor, GiftId = gift.Id, PersonId = gift.OwnerId, IncludesSplit = gift.Mode == "split" && !openOwnerBoard,
+                OpenOwnerBoard = openOwnerBoard, TelegramNextAttempt = DateTimeOffset.UtcNow, Text = text
+            });
     }
 
     private void StoreTokens(OhmywishesConnection connection, OhmywishesTokens tokens) =>
