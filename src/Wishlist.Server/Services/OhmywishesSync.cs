@@ -444,7 +444,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         if (previous.Occasion != current.Occasion || previous.OccasionDate != current.OccasionDate)
             changes.Add("Изменился повод или его дата.");
 
-        return $"В Ohmywishes обновилось желание «{current.Title}». Владелец: {owner}.\n{string.Join("\n", changes)}";
+        return $"🔄 В Ohmywishes обновилось желание «{current.Title}». Владелец: {owner}.\n{string.Join("\n", changes)}";
     }
 
     private async Task RecordFailure(Guid userId, Guid revision, string? usedTokens, bool reconnect, CancellationToken ct,
@@ -522,7 +522,7 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
     {
         if (gift.OhmywishesHidden) return;
         gift.OhmywishesHidden = true;
-        Notify(gift, $"Желание «{gift.Title}» больше недоступно в Ohmywishes.", openOwnerBoard: true);
+        Notify(gift, $"🙈 Желание «{gift.Title}» больше недоступно в Ohmywishes.", openOwnerBoard: true);
     }
 
     private void Notify(Gift gift, string text, bool openOwnerBoard = false)

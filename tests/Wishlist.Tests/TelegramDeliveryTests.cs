@@ -20,7 +20,7 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(
             DateTimeOffset.UtcNow, "Asia/Yekaterinburg").DateTime);
         var company = new Company { Name = "Telegram test", InviteHash = Guid.NewGuid().ToString() };
-        var owner = new AppUser { Name = "Именинник", TelegramId = 41001, BirthDate = today.AddDays(4) };
+        var owner = new AppUser { Name = "Юлия", TelegramId = 41001, BirthDate = today.AddDays(4) };
         var coordinator = new AppUser { Name = "Координатор", TelegramId = 41002, Contact = "@coordinator" };
         var participant = new AppUser { Name = "Участник", TelegramId = 41003, Contact = "@participant" };
         var observer = new AppUser { Name = "Друг", TelegramId = 41004 };
@@ -64,20 +64,23 @@ public class TelegramDeliveryTests(PostgresFixture fixture) : IClassFixture<Post
                 await Task.Delay(25, timeout.Token);
 
             var archived = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.Contains("в архиве"));
-            Assert.Equal(new[] { "Другие желания Именинник", "Открыть профиль" }, archived.Labels);
+            Assert.Equal(new[] { "Другие желания Юлии" }, archived.Labels);
             Assert.Contains($"https://wishes.hype-ny.ru/?open=owner&id={owner.Id:D}", archived.Urls);
-            var hidden = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("Видимость желания"));
-            Assert.Contains("Другие желания Именинник", hidden.Labels);
+            var hidden = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("👁️ Видимость желания"));
+            Assert.Contains("Другие желания Юлии", hidden.Labels);
             Assert.DoesNotContain("Открыть желание", hidden.Labels);
-            var joined = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("К распилу подарка"));
-            Assert.Equal(new[] { "Открыть желание", "Детали распила", "Открыть профиль" }, joined.Labels);
+            var joined = Assert.Single(telegram.Sent, m => m.Chat == participant.TelegramId && m.Text.StartsWith("👥 К распилу подарка"));
+            Assert.Equal(new[] { "Открыть желание", "Детали распила" }, joined.Labels);
             Assert.Contains(joined.Urls, url => url.StartsWith("https://wishes.hype-ny.ru/?open=split&id="));
             Assert.Equal(13, telegram.Sent.Count);
             Assert.DoesNotContain(telegram.Sent, m => m.Chat == owner.TelegramId || m.Chat == outsider.TelegramId);
-            Assert.StartsWith("Скоро день рождения", Assert.Single(telegram.Sent, m => m.Chat == observer.TelegramId).Text);
+            var birthday = Assert.Single(telegram.Sent, m => m.Chat == observer.TelegramId);
+            Assert.StartsWith("🎂 Скоро день рождения", birthday.Text);
+            Assert.Equal(new[] { "Другие желания Юлии" }, birthday.Labels);
+            Assert.All(telegram.Sent, message => Assert.DoesNotContain("Открыть профиль", message.Labels));
             foreach (var recipient in new[] { coordinator, participant })
-                foreach (var prefix in new[] { "К распилу подарка", "Сбор на подарок", "Желание изменено",
-                    "Видимость желания", "Желание «Обновлённое желание» в архиве", "Скоро день рождения" })
+                foreach (var prefix in new[] { "👥 К распилу подарка", "✅ Сбор на подарок", "✏️ Желание изменено",
+                    "👁️ Видимость желания", "📦 Желание «Обновлённое желание» в архиве", "🎂 Скоро день рождения" })
                     Assert.Single(telegram.Sent, m => m.Chat == recipient.TelegramId && m.Text.StartsWith(prefix));
         }
         finally { await worker.StopAsync(CancellationToken.None); }

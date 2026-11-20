@@ -187,12 +187,12 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         };
         var title = $"«{gift.Title}»";
         var noticeText = archive == true
-            ? $"Желание {title} в архиве. Владелец: {user.Name}. Бронирования сняты."
-            : visibilityChanged ? $"Видимость желания {title} изменена. Владелец: {user.Name}. Участие сохраняется."
-            : input != null ? $"Желание изменено: {title}. Владелец: {user.Name}. Проверьте детали перед покупкой."
+            ? $"📦 Желание {title} в архиве. Владелец: {user.Name}. Бронирования сняты."
+            : visibilityChanged ? $"👁️ Видимость желания {title} изменена. Владелец: {user.Name}. Участие сохраняется."
+            : input != null ? $"✏️ Желание изменено: {title}. Владелец: {user.Name}. Проверьте детали перед покупкой."
             : action?.Action == "join"
-                ? $"К распилу подарка {title} присоединился новый участник: {user.Name}. Сумма доли могла измениться."
-                : $"Сбор на подарок {title} завершён. Посмотрите сумму своей доли и список участников.";
+                ? $"👥 К распилу подарка {title} присоединился новый участник: {user.Name}. Сумма доли могла измениться."
+                : $"✅ Сбор на подарок {title} завершён. Посмотрите сумму своей доли и список участников.";
         if (input != null || visibility != null || archive == true || restored || action != null && !gift.Unlimited)
             foreach (var recipient in recipients)
                 db.Notices.Add(new()
