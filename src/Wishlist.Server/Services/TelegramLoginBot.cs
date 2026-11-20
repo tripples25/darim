@@ -49,8 +49,8 @@ public sealed class TelegramLoginBot(IHttpClientFactory clients,IConfiguration c
    var identity=new TelegramIdentity(id,name[..Math.Min(name.Length,100)],from.TryGetProperty("username",out var username)?username.GetString():null);
    code=codes.Issue(identity);
    if(code==null)return;
-   reply=$"Код для входа в Дарим: {code}\n\nВведите его на сайте в разделе «Войти по коду». Код действует 5 минут и только один раз. Новый код отменит предыдущий. Никому его не сообщайте. Если вы не входите в Дарим, просто проигнорируйте сообщение.";
-  }else if(command=="/start"||command=="/help")reply="Чтобы войти в Дарим без переходов через Telegram, отправьте /login и введите полученный код на сайте. Подходит и для первого входа.";
+   reply=$"Код для входа в Дарим: {code}\n\nВведите этот код на сайте Darim. Код действует 5 минут и только один раз. Новый код отменит предыдущий. Никому его не сообщайте. Если вы не входите в Дарим, просто проигнорируйте сообщение.";
+  }else if(command=="/start"||command=="/help")reply="Чтобы войти в Дарим, отправьте /login и введите полученный код на сайте. Подходит и для первого входа.";
   else return;
   try{
    using var sent=await client.PostAsJsonAsync($"https://api.telegram.org/bot{token}/sendMessage",new{chat_id=chat.GetProperty("id").GetInt64(),text=reply,entities=code==null?Array.Empty<object>():new object[]{new{type="code",offset="Код для входа в Дарим: ".Length,length=code.Length}}},ct);

@@ -17,6 +17,8 @@ public class TelegramLoginBotTests {
   var handler=new Capture();using var client=new HttpClient(handler);var store=new TelegramLoginCodes(TimeProvider.System);
   using var msg=Message("private",123);await Bot(store).HandleMessage(msg.RootElement,client,"test",default);
   var code=Code(handler.Body!);Assert.Equal(123,store.Consume(code).Id);
+  using var payload=JsonDocument.Parse(handler.Body!);
+  Assert.False(payload.RootElement.TryGetProperty("reply_markup", out _));
  }
  [Fact] public async Task FailedDeliveryRevokesCode() {
   var handler=new Capture{Status=HttpStatusCode.BadGateway};using var client=new HttpClient(handler);var store=new TelegramLoginCodes(TimeProvider.System);

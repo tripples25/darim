@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Wishlist.Core;
@@ -5,6 +6,7 @@ namespace Wishlist.Server.Services;
 
 // Single-instance, ephemeral credentials. Store only hashes; restarting invalidates outstanding codes.
 public sealed class TelegramLoginCodes(TimeProvider clock) {
+ public const int Length = 6;
  sealed record Entry(TelegramIdentity Identity,DateTimeOffset Issued);
  readonly Dictionary<string,Entry> codes=[];
  readonly Dictionary<long,DateTimeOffset> lastIssued=[];
@@ -18,15 +20,19 @@ public sealed class TelegramLoginCodes(TimeProvider clock) {
    if(lastIssued.TryGetValue(identity.Id,out var issued)&&issued.AddSeconds(30)>now)return null;
    if(!lastIssued.ContainsKey(identity.Id)&&lastIssued.Count>=10000)throw new RuleException("Попробуйте запросить код позже.",429);
    var previous=codes.FirstOrDefault(x=>x.Value.Identity.Id==identity.Id);
+   if(previous.Value==null&&codes.Count>=10000)throw new RuleException("Попробуйте запросить код позже.",429);
+   string code, hash;
+   do {
+    code = RandomNumberGenerator.GetInt32(1_000_000).ToString("D6", CultureInfo.InvariantCulture);
+    hash = Hash(code);
+   } while (codes.ContainsKey(hash));
    if(previous.Value!=null)codes.Remove(previous.Key);
-   if(codes.Count>=10000)throw new RuleException("Попробуйте запросить код позже.",429);
-   string code;do{code=Convert.ToHexString(RandomNumberGenerator.GetBytes(6));}while(codes.ContainsKey(Hash(code)));
-   codes.Add(Hash(code),new(identity,now));lastIssued[identity.Id]=now;return code;
+   codes.Add(hash,new(identity,now));lastIssued[identity.Id]=now;return code;
   }
  }
  public TelegramIdentity Consume(string? code) {
-  var normalized=code?.Trim().ToUpperInvariant()??"";
-  if(normalized.Length!=12||!normalized.All(char.IsAsciiHexDigit))throw Invalid();
+  var normalized=code?.Trim()??"";
+  if(normalized.Length!=Length||!normalized.All(char.IsAsciiDigit))throw Invalid();
   lock(gate){
    if(!codes.Remove(Hash(normalized),out var entry)||entry.Issued.AddMinutes(5)<=clock.GetUtcNow())throw Invalid();
    return entry.Identity;
