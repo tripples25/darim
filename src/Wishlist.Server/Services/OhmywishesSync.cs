@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -402,10 +403,11 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
             if (input.Occupied is { } occupied &&
                 (gift.OhmywishesReservationChanged == null || gift.OhmywishesReservationChanged <= snapshotStarted))
                 gift.OhmywishesOccupied = occupied;
-            if (!gift.OhmywishesDetailsEdited && gift.Details != input.Details)
+            var previous = gift.Details;
+            if (!gift.OhmywishesDetailsEdited && previous != input.Details)
             {
                 gift.Edit(userId, input.Details);
-                Notify(gift, "Желание изменилось в Ohmywishes.");
+                if (previous != gift.Details) Notify(gift, DescribeUpdate(user.Name, previous, gift.Details));
             }
             if (!gift.OhmywishesPhotoEdited)
                 await StorePhoto(gift, input.PhotoUrl, downloads, ct);
@@ -427,6 +429,22 @@ public sealed class OhmywishesSync(AppDb db, OhmywishesOptions options, Ohmywish
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return true;
+    }
+
+    private static string DescribeUpdate(string owner, GiftInput previous, GiftInput current)
+    {
+        var changes = new List<string>();
+        static string Price(decimal? value) =>
+            value is { } amount ? amount.ToString("0.##", CultureInfo.GetCultureInfo("ru-RU")) + " ₽" : "не указана";
+
+        if (previous.Title != current.Title) changes.Add($"Название: «{previous.Title}» → «{current.Title}».");
+        if (previous.Price != current.Price) changes.Add($"Цена: {Price(previous.Price)} → {Price(current.Price)}.");
+        if (previous.Url != current.Url) changes.Add("Изменилась ссылка на товар.");
+        if (previous.Comment != current.Comment) changes.Add("Обновилось описание.");
+        if (previous.Occasion != current.Occasion || previous.OccasionDate != current.OccasionDate)
+            changes.Add("Изменился повод или его дата.");
+
+        return $"В Ohmywishes обновилось желание «{current.Title}». Владелец: {owner}.\n{string.Join("\n", changes)}";
     }
 
     private async Task RecordFailure(Guid userId, Guid revision, string? usedTokens, bool reconnect, CancellationToken ct,

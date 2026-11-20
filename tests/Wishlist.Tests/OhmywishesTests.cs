@@ -194,6 +194,7 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         db.ChangeTracker.Clear();
 
         provider.Title = "Новая книга";
+        provider.Price = 600;
         provider.FailSecondPage = true;
         await RunNow();
         Assert.Equal("Книга", Assert.Single(await service.List(owner.Id)).Details.Title);
@@ -206,6 +207,19 @@ public class OhmywishesPostgresTests(PostgresFixture fixture)
         Assert.Equal("Книга", updated.Original?.Title);
         Assert.True(updated.Participation?.Bought);
         Assert.Equal(2, updated.Participation?.Taken);
+
+        foreach (var participant in new[] { donor, otherDonor })
+        {
+            var notice = await db.Notices.SingleAsync(n => n.UserId == participant.Id &&
+                n.Text.StartsWith("В Ohmywishes обновилось желание"));
+            Assert.Contains("«Новая книга»", notice.Text);
+            Assert.Contains($"Владелец: {owner.Name}", notice.Text);
+            Assert.Contains("Название: «Книга» → «Новая книга».", notice.Text);
+            Assert.Contains("Цена: 550 ₽ → 600 ₽.", notice.Text);
+            Assert.Equal(gift.Id, notice.GiftId);
+            Assert.Equal(owner.Id, notice.PersonId);
+            Assert.True(notice.IncludesSplit);
+        }
 
         provider.WishPrivate = true;
         await RunNow();
@@ -291,6 +305,7 @@ internal sealed class FakeOhmywishes : HttpMessageHandler
     public bool FailSecondPage { get; set; }
     public bool WishPrivate { get; set; }
     public string Title { get; set; } = "Книга";
+    public int Price { get; set; } = 550;
     public int DetailCalls { get; private set; }
     public List<int> Offsets { get; } = [];
 
@@ -326,7 +341,7 @@ internal sealed class FakeOhmywishes : HttpMessageHandler
             case "get_my_wish":
                 DetailCalls++;
                 Assert.Equal("wish", arguments.GetProperty("wishId").GetString());
-                return Tool(new { id = "wish", title = Title, visibility = "public", price = new { amount = 550, currency = "RUB" } });
+                return Tool(new { id = "wish", title = Title, visibility = "public", price = new { amount = Price, currency = "RUB" } });
             default:
                 throw new InvalidOperationException("Unexpected tool.");
         }
