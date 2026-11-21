@@ -41,7 +41,6 @@ public class Gift {
  }
  public void Edit(Guid userId, GiftInput input) {
   Require(userId==OwnerId,"Редактировать может только владелец.",403);
-  Require(!Archived,"Желание уже в архиве.");
   Require(!string.IsNullOrWhiteSpace(input.Title) && input.Title.Trim().Length<=160,"Название: от 1 до 160 символов.",400);
   Require(input.Price is null or >=0 and <=100000000,"Некорректная цена.",400);
   Require((input.Comment?.Length??0)<=2000 && (input.Url?.Length??0)<=2048,"Слишком длинное описание или ссылка.",400);
