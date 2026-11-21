@@ -3,7 +3,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 DEV_CONFIG = Path(__file__).with_name("deploy-dev.yaml").read_text()
-IGNORE_CONFIG = "when:\n  - evaluate: 'false'\nsteps: []\n"
+IGNORE_CONFIG = """when:
+  - evaluate: 'false'
+steps:
+  - name: skip
+    image: alpine:3.22
+    commands: ['true']
+"""
 
 
 class ConfigurationHandler(BaseHTTPRequestHandler):
