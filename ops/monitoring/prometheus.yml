@@ -1,6 +1,14 @@
 global:
   scrape_interval: 15s
   scrape_timeout: 5s
+  evaluation_interval: 30s
+
+rule_files: [/etc/prometheus/host.rules.yml]
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
 
 storage:
   tsdb:
@@ -17,3 +25,22 @@ scrape_configs:
       credentials_file: /run/secrets/scrape_token
     file_sd_configs:
       - files: [/etc/prometheus/targets.yml]
+  - job_name: darim-system
+    file_sd_configs:
+      - files: [/etc/prometheus/host-metrics.yml]
+  - job_name: darim-alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+  - job_name: darim-health
+    metrics_path: /probe
+    params:
+      module: [darim_health]
+    static_configs:
+      - targets: ['http://darim-coolify-app:8080/health']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

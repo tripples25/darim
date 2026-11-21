@@ -1,0 +1,84 @@
+#!/bin/bash
+set -euo pipefail
+state=/var/lib/darim-maintenance
+metrics=/var/lib/darim-node-exporter
+install -d -m 0755 "$state" "$metrics"
+exec 9>/run/lock/darim-maintenance/tick.lock
+flock -n 9 || exit 0
+last=$(cat "$state/last-success" 2>/dev/null || echo 0)
+now=$(date +%s)
+read -r avail size < <(df -B1 --output=avail,size / | tail -1)
+dry_run=${DRY_RUN:-0}
+[[ $# == 0 || ( $# == 1 && $1 == --dry-run ) ]] || exit 2
+[[ $# == 0 ]] || dry_run=1
+(( dry_run || now-last >= 86400 || avail*5 < size )) || exit 0
+before=$(df -B1 --output=avail / | tail -1)
+skipped=0
+finish() {
+  local rc=$? after temp
+  (( dry_run == 0 )) || return "$rc"
+  after=$(df -B1 --output=avail / | tail -1)
+  if (( rc == 0 && skipped == 0 )); then
+    last=$now
+    printf '%s\n' "$last" > "$state/last-success.tmp"
+    mv -f "$state/last-success.tmp" "$state/last-success"
+  fi
+  if (( skipped == 0 )); then
+    printf '%s\n' "$((rc != 0))" > "$state/failed.tmp"
+    mv -f "$state/failed.tmp" "$state/failed"
+  fi
+  temp=$(mktemp "$metrics/.cleanup.XXXXXX")
+  {
+    printf 'darim_cleanup_last_attempt_seconds %s\n' "$now"
+    printf 'darim_cleanup_last_success_seconds %s\n' "$last"
+    printf 'darim_cleanup_failed %s\n' "$(cat "$state/failed" 2>/dev/null || echo 0)"
+    printf 'darim_cleanup_skipped %s\n' "$skipped"
+    printf 'darim_cleanup_free_bytes_delta %s\n' "$((after-before))"
+  } > "$temp"
+  chmod 0644 "$temp"
+  mv -f "$temp" "$metrics/darim-cleanup.prom"
+  return "$rc"
+}
+trap finish EXIT
+exec 8</var/lib/docker/volumes/darim-ci_worker_socket/_data/operations.lock
+if ! flock -nx 8; then
+  skipped=1
+  echo 'Build, publication, or deployment active'
+  exit 0
+fi
+mapfile -t workers < <(docker ps --filter volume=darim-ci_worker_data --format '{{.ID}}')
+[[ ${#workers[@]} == 1 ]]
+ci() { docker exec "${workers[0]}" docker -H unix:///run/ci/docker.sock "$@"; }
+running=$(ci ps -q)
+if [[ -n $running ]]; then
+  skipped=1
+  echo 'CI containers are running'
+  exit 0
+fi
+ci system df
+stale=$(ci ps -aq --filter status=exited --filter label=darim.ci.verification=true)
+for id in $stale; do
+  finished=$(ci inspect --format '{{.State.FinishedAt}}' "$id")
+  (( now-$(date -d "$finished" +%s) >= 86400 )) || continue
+  echo "Stale verifier: $id ($finished)"
+  (( dry_run )) || ci rm "$id"
+done
+volumes=$(ci volume ls -q --filter dangling=true)
+for volume in $volumes; do
+  case "$volume" in
+    wp_*) echo "Unused CI volume: $volume"; (( dry_run )) || ci volume rm "$volume";;
+  esac
+done
+if (( dry_run == 0 )); then
+  if [[ -e "$state/registry-stopped" ]]; then
+    /opt/darim-maintenance/registry-cleanup --recover
+  fi
+  ci builder prune -af --max-used-space 6GB
+  # The registry retains rollback images. This daemon is only a build cache.
+  ci image prune -af --filter until=72h
+  journalctl --vacuum-size=500M
+fi
+if (( dry_run )) || [[ -f "$state/registry-enabled" ]]; then
+  DRY_RUN=$dry_run /opt/darim-maintenance/registry-cleanup
+fi
+df -h /

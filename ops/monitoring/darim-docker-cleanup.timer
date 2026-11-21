@@ -1,0 +1,7 @@
+[Unit]
+Description=Check Darim Docker disk budget
+[Timer]
+OnCalendar=*-*-* *:00/15:00
+Persistent=true
+[Install]
+WantedBy=timers.target

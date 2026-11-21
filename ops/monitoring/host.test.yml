@@ -1,0 +1,60 @@
+rule_files:
+  - host.rules.yml
+evaluation_interval: 30s
+tests:
+  - interval: 30s
+    input_series:
+      - series: 'node_memory_MemTotal_bytes{job="darim-system"}'
+        values: '1000x45'
+      - series: 'node_memory_MemAvailable_bytes{job="darim-system"}'
+        values: '50x6 500x6 100x25 500x6'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname="DarimRamCritical",alertstate="firing"}) or vector(0)'
+        eval_time: 2m30s
+        exp_samples:
+          - value: 0
+      - expr: 'count(ALERTS{alertname="DarimRamCritical",alertstate="firing"}) or vector(0)'
+        eval_time: 3m
+        exp_samples:
+          - value: 1
+      - expr: 'count(ALERTS{alertname="DarimRamWarning",alertstate="firing"}) or vector(0)'
+        eval_time: 17m
+        exp_samples:
+          - value: 1
+      - expr: 'count(ALERTS{alertname="DarimRamWarning",alertstate="firing"}) or vector(0)'
+        eval_time: 21m
+        exp_samples:
+          - value: 0
+  - interval: 30s
+    input_series:
+      - series: 'up{job="darim-system"}'
+        values: '1 0x4 1x40'
+      - series: 'probe_success{job="darim-health"}'
+        values: '1 0x4 1x40'
+      - series: 'node_filesystem_size_bytes{job="darim-system",mountpoint="/",fstype="ext4"}'
+        values: '1000x45'
+      - series: 'node_filesystem_avail_bytes{job="darim-system",mountpoint="/",fstype="ext4"}'
+        values: '90x12 500x32'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname=~"DarimApiDown|DarimHostMetricsDown",alertstate="firing"}) or vector(0)'
+        eval_time: 2m
+        exp_samples:
+          - value: 0
+      - expr: 'count(ALERTS{alertname=~"DarimApiDown|DarimHostMetricsDown",alertstate="firing"}) or vector(0)'
+        eval_time: 2m30s
+        exp_samples:
+          - value: 2
+      - expr: 'count(ALERTS{alertname="DarimDiskCritical",alertstate="firing"}) or vector(0)'
+        eval_time: 5m
+        exp_samples:
+          - value: 1
+      - expr: 'count(ALERTS{alertname=~"DarimDiskCritical|DarimApiDown|DarimHostMetricsDown",alertstate="firing"}) or vector(0)'
+        eval_time: 7m
+        exp_samples:
+          - value: 0
+  - interval: 30s
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname="DarimHostMetricsDown",alertstate="firing"}) or vector(0)'
+        eval_time: 2m
+        exp_samples:
+          - value: 1

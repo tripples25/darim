@@ -1,0 +1,27 @@
+route:
+  receiver: telegram
+  group_by: [host, resource]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      repeat_interval: 1h
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [host, resource]
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /run/secrets/telegram_token
+        chat_id: @CHAT_ONE@
+        parse_mode: ""
+        send_resolved: true
+        message: '{{ template "darim.message" . }}'
+      - bot_token_file: /run/secrets/telegram_token
+        chat_id: @CHAT_TWO@
+        parse_mode: ""
+        send_resolved: true
+        message: '{{ template "darim.message" . }}'
+templates: [/etc/alertmanager/darim.tmpl]
