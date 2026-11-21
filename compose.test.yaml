@@ -8,6 +8,8 @@ services:
       DarimTest__Enabled: 'true'
       ConnectionStrings__Database: "Host=db-6o4qlqy50orrzxavuw0c7rp5;Database=wishlist;Username=darim_test;Password=${DARIM_TEST_DB_PASSWORD:?};Search Path=darim_test"
       Auth__SigningKey: ${DARIM_TEST_SIGNING_KEY:?}
+      Telegram__ClientId: "${DARIM_TEST_TELEGRAM_CLIENT_ID:-}"
+      Telegram__ClientSecret: "${DARIM_TEST_TELEGRAM_CLIENT_SECRET:-}"
       DataProtection__Path: /keys
       Proxy__Address: 172.28.45.2
     volumes:
