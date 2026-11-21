@@ -188,6 +188,14 @@ public class OhmywishesWebTests
             if (request.Headers.TryGetValues("x-access-token", out var tokens))
             {
                 Assert.Equal("test-token", Assert.Single(tokens));
+                if (request.RequestUri.AbsolutePath == $"/api/v3/users/{Account}")
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = JsonContent.Create(new
+                        {
+                            item = new { id = Account, isFollowedByMe = true, isFollowingRequestSent = false }
+                        })
+                    });
                 var id = request.RequestUri.Segments[^1];
                 Assert.Contains(id, new[] { Wish, AnotherWish });
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

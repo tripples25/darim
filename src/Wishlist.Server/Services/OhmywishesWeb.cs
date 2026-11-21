@@ -36,6 +36,17 @@ public sealed partial class OhmywishesWeb(HttpClient http, ILogger<OhmywishesWeb
         var shared = shareToken != null;
         var reference = shareToken ?? list;
         if (!await ListAvailable(account, list, reference, shared, ct)) return snapshot;
+        if (reservations?.Enabled == true)
+        {
+            try
+            {
+                await reservations.EnsureFollowing(account, ct);
+            }
+            catch (Wishlist.Core.RuleException ex)
+            {
+                logger?.LogWarning("Ohmywishes subscription unavailable ({Status}).", ex.Status);
+            }
+        }
         var wishesPath = $"users/{account}/wish-lists/{reference}/wishes-v2";
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (var offset = 0; offset < 2000; offset += PageSize)

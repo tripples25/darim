@@ -9,6 +9,34 @@ public sealed class OhmywishesReservations(HttpClient http, OhmywishesOptions op
 {
     public bool Enabled => !string.IsNullOrWhiteSpace(options.ReservationToken);
 
+    public async Task EnsureFollowing(string account, CancellationToken ct)
+    {
+        if (!Enabled) return;
+        if (account.Length != 24 || !account.All(Uri.IsHexDigit)) throw Unavailable();
+        try
+        {
+            using var profileRequest = Request(HttpMethod.Get, $"users/{account}");
+            using var profileResponse = await http.SendAsync(profileRequest, ct);
+            if (!profileResponse.IsSuccessStatusCode) throw Unavailable();
+            using var json = await JsonDocument.ParseAsync(await profileResponse.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            var profile = json.RootElement.GetProperty("item");
+            if (profile.GetProperty("id").GetString() != account) throw Unavailable();
+            var followed = profile.GetProperty("isFollowedByMe").GetBoolean();
+            var pending = profile.GetProperty("isFollowingRequestSent").GetBoolean();
+            if (followed || pending) return;
+
+            using var followRequest = Request(HttpMethod.Post, $"users/{account}/following");
+            using var followResponse = await http.SendAsync(followRequest, ct);
+            // The follow endpoint may return 204 without a JSON body.
+            if (!followResponse.IsSuccessStatusCode) throw Unavailable();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException ||
+            ex is OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            throw Unavailable();
+        }
+    }
+
     public async Task Reserve(string id, CancellationToken ct, string? readPath = null)
     {
         if ((await Send(HttpMethod.Get, id, ct, readPath)).Occupied)
@@ -33,11 +61,7 @@ public sealed class OhmywishesReservations(HttpClient http, OhmywishesOptions op
         if (!Enabled || id.Length != 24 || !id.All(Uri.IsHexDigit)) throw Unavailable();
         var path = readPath ?? $"wishes/{id}";
         if (method != HttpMethod.Get) path += "/reservation";
-        using var request = new HttpRequestMessage(method, $"https://ohmywishes.com/api/v3/{path}");
-        request.Headers.Add("x-access-token", options.ReservationToken);
-        request.Headers.Add("x-content-region", "russia");
-        request.Headers.Accept.ParseAdd("application/json");
-        request.Headers.UserAgent.ParseAdd("Darim/1.0 (+https://wishes.hype-ny.ru)");
+        using var request = Request(method, path);
         try
         {
             using var response = await http.SendAsync(request, ct);
@@ -57,6 +81,16 @@ public sealed class OhmywishesReservations(HttpClient http, OhmywishesOptions op
         {
             throw Unavailable();
         }
+    }
+
+    private HttpRequestMessage Request(HttpMethod method, string path)
+    {
+        var request = new HttpRequestMessage(method, $"https://ohmywishes.com/api/v3/{path}");
+        request.Headers.Add("x-access-token", options.ReservationToken);
+        request.Headers.Add("x-content-region", "russia");
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("Darim/1.0 (+https://wishes.hype-ny.ru)");
+        return request;
     }
 
     internal static RuleException Unavailable() => new("Не удалось проверить бронь в Ohmywishes. Попробуйте позже.", 503);
