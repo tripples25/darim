@@ -1,6 +1,6 @@
 # Тестовый контур Darim
 
-Backend в Coolify: проект Darim, окружение staging, приложение darim-backend-test. Источник — ветка `dev`, Build Pack Docker Compose, файл `/ops/dev/compose.yaml`, режим Raw Compose. Контейнер не публикует порты. Caddy принимает тестовый домен и проксирует API, авторизацию и health через сеть darim-edge.
+Backend в Coolify: проект Darim, окружение staging, приложение darim-backend-test. Источник — ветка `dev`, Build Pack Docker Compose, файл `/compose.test.yaml`, режим Raw Compose. Контейнер не публикует порты. Caddy принимает тестовый домен и проксирует API, авторизацию и health через сеть darim-edge.
 
 Перед созданием роли снимите резервную копию `wishlist` и проверьте текущие роли, использующие схему public. Скрипт `provision.sql` рассчитан на VPS, где `wishlist` является единственной существующей ролью приложения и бэкапа. Выполните его через psql от имени владельца БД в базе wishlist. Введите случайный пароль для darim_test. Внесите пароль и новый независимый ключ подписи в runtime-переменные Coolify `DARIM_TEST_DB_PASSWORD` и `DARIM_TEST_SIGNING_KEY`. Используйте значение пароля в hex, чтобы его можно было безопасно подставить в connection string. Таблицы и история EF создаются в `darim_test` при старте. Тестовый контур использует отдельный том ключей, а Telegram потребует отдельной конфигурации.
 
