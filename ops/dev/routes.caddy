@@ -1,0 +1,25 @@
+https://test-ui.wishes.hype-ny.ru {
+    encode zstd gzip
+    @private path /metrics /metrics/*
+    handle @private {
+        respond 404
+    }
+    @backend path /api /api/* /auth /auth/* /logout /health
+    handle @backend {
+        reverse_proxy darim-test-api:8080
+    }
+    handle /frontend-health {
+        rewrite * /health
+        reverse_proxy darim-test-ui:80
+    }
+    handle {
+        reverse_proxy darim-test-ui:80
+    }
+    header {
+        X-Robots-Tag "noindex, nofollow"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+        -Server
+    }
+}
