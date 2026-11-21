@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Staging
+      DarimTest__Enabled: 'true'
+      ConnectionStrings__Database: "Host=db-6o4qlqy50orrzxavuw0c7rp5;Database=wishlist;Username=darim_test;Password=${DARIM_TEST_DB_PASSWORD:?};Search Path=darim_test"
+      Auth__SigningKey: ${DARIM_TEST_SIGNING_KEY:?}
+      DataProtection__Path: /keys
+      Proxy__Address: 172.28.45.2
+    volumes:
+      - keys:/keys
+    networks:
+      database:
+      edge:
+        aliases:
+          - darim-test-api
+    healthcheck:
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 5s
+      timeout: 4s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  keys:
+
+networks:
+  database:
+    name: 6o4qlqy50orrzxavuw0c7rp5
+    external: true
+  edge:
+    name: darim-edge
+    external: true

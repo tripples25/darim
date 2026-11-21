@@ -46,14 +46,21 @@ if(builder.Configuration["DataProtection:Path"] is {} keys)builder.Services.AddD
 builder.Services.AddRateLimiter(o=>{o.RejectionStatusCode=429;o.AddPolicy("auth",ctx=>RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString()??"unknown",_=>new(){PermitLimit=30,Window=TimeSpan.FromMinutes(1),QueueLimit=0}));});
 builder.Services.Configure<ForwardedHeadersOptions>(o=>{o.ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto; /* Kestrel is private behind the local proxy; configure its address explicitly. */if(System.Net.IPAddress.TryParse(builder.Configuration["Proxy:Address"],out var ip))o.KnownProxies.Add(ip);});
 var app=builder.Build();
-if (args.Contains("--migrate"))
+var testDeployment = app.Configuration.GetValue<bool>("DarimTest:Enabled");
+if (testDeployment && !app.Environment.IsStaging())
+    throw new InvalidOperationException("DarimTest requires the Staging environment.");
+
+var migrateOnly = args.Contains("--migrate");
+if (migrateOnly || testDeployment)
 {
     var started = Stopwatch.GetTimestamp();
     app.Logger.LogInformation("Database migration started");
     await using var scope = app.Services.CreateAsyncScope();
-    await scope.ServiceProvider.GetRequiredService<AppDb>().Database.MigrateAsync();
+    var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+    if (testDeployment) await TestDeployment.VerifyDatabaseAsync(db);
+    await db.Database.MigrateAsync();
     app.Logger.LogInformation("Database migration completed in {ElapsedMs:F1} ms", Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-    return;
+    if (migrateOnly) return;
 }
 var demo=app.Environment.IsDevelopment()&&app.Configuration.GetValue<bool>("Demo:Enabled");
 if(demo){await using var scope=app.Services.CreateAsyncScope();var db=scope.ServiceProvider.GetRequiredService<AppDb>();await db.Database.MigrateAsync();await DemoData.Seed(db);}
