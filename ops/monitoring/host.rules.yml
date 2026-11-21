@@ -1,0 +1,161 @@
+groups:
+  - name: darim-host
+    rules:
+      - alert: DarimRamWarning
+        expr: "100 * node_memory_MemAvailable_bytes{job=\"darim-system\"} / node_memory_MemTotal_bytes{job=\"darim-system\"} < 15"
+        for: 10m
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: ram
+        annotations:
+          summary: "Доступная RAM, %"
+          detail: "<15% в течение 10m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimRamCritical
+        expr: "100 * node_memory_MemAvailable_bytes{job=\"darim-system\"} / node_memory_MemTotal_bytes{job=\"darim-system\"} < 7"
+        for: 3m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: ram
+        annotations:
+          summary: "Доступная RAM, %"
+          detail: "<7% в течение 3m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimCpuWarning
+        expr: "100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{job=\"darim-system\",mode=\"idle\"}[5m]))) > 85"
+        for: 15m
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: cpu
+        annotations:
+          summary: "Загрузка CPU, %"
+          detail: ">85% в течение 15m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimCpuCritical
+        expr: "100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{job=\"darim-system\",mode=\"idle\"}[5m]))) > 95"
+        for: 10m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: cpu
+        annotations:
+          summary: "Загрузка CPU, %"
+          detail: ">95% в течение 10m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimDiskWarning
+        expr: "100 * node_filesystem_avail_bytes{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\",device_error=\"\"} / node_filesystem_size_bytes{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\",device_error=\"\"} < 20"
+        for: 15m
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: disk
+        annotations:
+          summary: "Место на /, %"
+          detail: "<20% в течение 15m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimDiskCritical
+        expr: "100 * node_filesystem_avail_bytes{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\",device_error=\"\"} / node_filesystem_size_bytes{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\",device_error=\"\"} < 10"
+        for: 5m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: disk
+        annotations:
+          summary: "Место на /, %"
+          detail: "<10% в течение 5m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimInodesWarning
+        expr: "100 * node_filesystem_files_free{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_files{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} < 15"
+        for: 15m
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: inodes
+        annotations:
+          summary: "Свободные inode на /, %"
+          detail: "<15% в течение 15m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimInodesCritical
+        expr: "100 * node_filesystem_files_free{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_files{job=\"darim-system\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} < 5"
+        for: 5m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: inodes
+        annotations:
+          summary: "Свободные inode на /, %"
+          detail: "<5% в течение 5m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimOom
+        expr: "increase(node_vmstat_oom_kill{job=\"darim-system\"}[5m]) > 0"
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: oom
+        annotations:
+          summary: "Ядро завершило процесс из-за нехватки памяти"
+          detail: "OOM за 5 минут. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimApiDown
+        expr: "probe_success{job=\"darim-health\"} == 0"
+        for: 2m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: api
+        annotations:
+          summary: "API не отвечает"
+          detail: "Успешность HTTP-проверки в течение 2m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimHostMetricsDown
+        expr: "up{job=\"darim-system\"} == 0 or absent(up{job=\"darim-system\"})"
+        for: 2m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: hostmetrics
+        annotations:
+          summary: "Недоступна цель мониторинга"
+          detail: "darim-system в течение 2m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimApiMetricsDown
+        expr: "up{job=\"darim\"} == 0 or absent(up{job=\"darim\"})"
+        for: 2m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: apimetrics
+        annotations:
+          summary: "Недоступна цель мониторинга"
+          detail: "darim в течение 2m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimProbeDown
+        expr: "up{job=\"darim-health\"} == 0 or absent(up{job=\"darim-health\"})"
+        for: 2m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: probe
+        annotations:
+          summary: "Недоступна цель мониторинга"
+          detail: "darim-health в течение 2m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimAlertmanagerDown
+        expr: "up{job=\"darim-alertmanager\"} == 0 or absent(up{job=\"darim-alertmanager\"})"
+        for: 2m
+        labels:
+          severity: critical
+          host: darim-prod
+          resource: alertmanager
+        annotations:
+          summary: "Недоступна цель мониторинга"
+          detail: "darim-alertmanager в течение 2m. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimCleanupFailed
+        expr: "darim_cleanup_failed{job=\"darim-system\"} == 1"
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: cleanup
+        annotations:
+          summary: "Не удалось очистить диск"
+          detail: "Код состояния. Значение: {{ printf \"%.2f\" $value }}"
+      - alert: DarimCleanupStale
+        expr: "(time() - darim_cleanup_last_success_seconds{job=\"darim-system\"}) / 3600 > 26 or absent_over_time(darim_cleanup_last_success_seconds{job=\"darim-system\"}[26h])"
+        for: 5m
+        labels:
+          severity: warning
+          host: darim-prod
+          resource: cleanup
+        annotations:
+          summary: "Нет успешной уборки диска"
+          detail: "Часов с последней уборки или отсутствует метрика в течение 5m. Значение: {{ printf \"%.2f\" $value }}"

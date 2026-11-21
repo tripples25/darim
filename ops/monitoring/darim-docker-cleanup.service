@@ -1,0 +1,11 @@
+[Unit]
+Description=Clean unused Darim CI Docker data
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+ExecStart=/opt/darim-maintenance/darim-docker-cleanup
+ExecStopPost=/opt/darim-maintenance/registry-cleanup --recover
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min

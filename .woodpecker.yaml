@@ -8,8 +8,9 @@ steps:
     image: docker:27-cli
     volumes:
       - /run/ci/docker.sock:/var/run/docker.sock
+      - /run/ci/operations.lock:/run/ci/operations.lock
     commands:
-      - sh ops/woodpecker-build.sh
+      - flock -s /run/ci/operations.lock sh ops/woodpecker-build.sh
 
   - name: read-production-revision
     image: alpine:3.22
@@ -27,8 +28,9 @@ steps:
     image: docker:27-cli
     volumes:
       - /run/ci/docker.sock:/var/run/docker.sock
+      - /run/ci/operations.lock:/run/ci/operations.lock
     commands:
-      - sh ops/publish-woodpecker-image.sh
+      - flock -s /run/ci/operations.lock sh ops/publish-woodpecker-image.sh
     when:
       - event: push
         branch: main

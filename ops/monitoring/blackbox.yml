@@ -1,0 +1,8 @@
+modules:
+  darim_health:
+    prober: http
+    timeout: 4s
+    http:
+      valid_status_codes: [200]
+      follow_redirects: false
+      fail_if_body_not_matches_regexp: ['"status"\s*:\s*"ok"']
