@@ -26,7 +26,10 @@ public static class AuthSetup {
   if(string.IsNullOrWhiteSpace(secret)||Encoding.UTF8.GetByteCount(secret)<32)throw new InvalidOperationException("Set Auth__SigningKey to a random secret of at least 32 bytes.");
   var auth=b.Services.AddAuthentication(o=>{o.DefaultScheme="Session";o.DefaultChallengeScheme="Session";})
    .AddPolicyScheme("Session","Session",o=>o.ForwardDefaultSelector=ctx=>ctx.Request.Headers.Authorization.ToString().StartsWith("Bearer ",StringComparison.OrdinalIgnoreCase)?"Bearer":"Cookies")
-   .AddCookie("Cookies",o=>{o.Cookie.Name="wishlist.session";o.Cookie.HttpOnly=true;o.Cookie.SameSite=SameSiteMode.Lax;o.Cookie.SecurePolicy=b.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;o.ExpireTimeSpan=TimeSpan.FromDays(14);o.SlidingExpiration=true;o.Events.OnRedirectToLogin=ctx=>{ctx.Response.StatusCode=401;return Task.CompletedTask;};o.Events.OnRedirectToAccessDenied=ctx=>{ctx.Response.StatusCode=403;return Task.CompletedTask;};})
+   .AddCookie("Cookies",o=>{o.Cookie.Name="wishlist.session";o.Cookie.HttpOnly=true;o.Cookie.SameSite=SameSiteMode.Lax;o.Cookie.SecurePolicy=b.Environment.IsDevelopment()?CookieSecurePolicy.SameAsRequest:CookieSecurePolicy.Always;o.ExpireTimeSpan=TimeSpan.FromDays(14);o.SlidingExpiration=true;o.Events.OnSigningIn=ctx=>{
+    ctx.Properties.IsPersistent=true;
+    return Task.CompletedTask;
+   };o.Events.OnRedirectToLogin=ctx=>{ctx.Response.StatusCode=401;return Task.CompletedTask;};o.Events.OnRedirectToAccessDenied=ctx=>{ctx.Response.StatusCode=403;return Task.CompletedTask;};})
    .AddJwtBearer("Bearer",o=>{o.MapInboundClaims=false;o.TokenValidationParameters=new(){ValidateIssuer=true,ValidIssuer="wishlist",ValidateAudience=true,ValidAudience="wishlist-mini",ValidateLifetime=true,ClockSkew=TimeSpan.FromSeconds(15),ValidateIssuerSigningKey=true,IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),ValidAlgorithms=[SecurityAlgorithms.HmacSha256],NameClaimType=ClaimTypes.Name,RoleClaimType=ClaimTypes.Role};});
   if(TelegramConfigured(b.Configuration)) {
    auth.AddOpenIdConnect("Telegram",o=>{
