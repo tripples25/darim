@@ -27,14 +27,20 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
-docker build -f ops/Dockerfile.ci -t darim-ci-tools:dotnet10 .
-# Host networking refers to the isolated CI daemon, not the VPS host.
-docker run --rm --name "$verification" --label darim.ci.verification=true \
-  --label "darim.ci.pipeline=$CI_PIPELINE_NUMBER" --network host --volumes-from "$HOSTNAME" \
-  -v /run/ci/docker.sock:/var/run/docker.sock \
-  -w "$PWD" -e CI_PIPELINE_NUMBER \
-  darim-ci-tools:dotnet10 sh ops/verify.sh &
-wait "$!"
+if { [ "${CI_PIPELINE_EVENT:-}" = manual ] && [ "${DARIM_SKIP_TESTS:-}" = true ]; } ||
+  { [ "${CI_PIPELINE_EVENT:-}" = push ] && [ "${CI_COMMIT_BRANCH:-}" = main ] &&
+    git log -1 --format=%B HEAD | grep -Fxq '[darim skip tests]'; }; then
+  echo 'Explicit opt-in: skipping test suites. Runtime migration and health checks still apply.'
+else
+  docker build -f ops/Dockerfile.ci -t darim-ci-tools:dotnet10 .
+  # Host networking refers to the isolated CI daemon, not the VPS host.
+  docker run --rm --name "$verification" --label darim.ci.verification=true \
+    --label "darim.ci.pipeline=$CI_PIPELINE_NUMBER" --network host --volumes-from "$HOSTNAME" \
+    -v /run/ci/docker.sock:/var/run/docker.sock \
+    -w "$PWD" -e CI_PIPELINE_NUMBER \
+    darim-ci-tools:dotnet10 sh ops/verify.sh &
+  wait "$!"
+fi
 docker build --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:?}" \
   --label "io.darim.ci.pipeline=$CI_PIPELINE_NUMBER" -t "darim:$CI_COMMIT_SHA" .
 

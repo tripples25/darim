@@ -9,6 +9,6 @@ repository=127.0.0.1:5000/darim
 docker tag "darim:$sha" "$repository:$sha"
 docker push "$repository:$sha"
 
-# Only this final pointer signals that tests and the commit-tagged push passed.
+# Move the production pointer only after the build checks and commit-tagged push.
 docker tag "$repository:$sha" "$repository:production"
 docker push "$repository:production"
