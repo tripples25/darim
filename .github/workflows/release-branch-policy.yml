@@ -1,0 +1,26 @@
+name: Release branch policy
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  main-source-branch:
+    name: Main source branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require dev from this repository
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+          BASE_REPOSITORY_ID: ${{ github.event.pull_request.base.repo.id }}
+        shell: bash
+        run: |
+          if [[ "$HEAD_REF" == dev && -n "$BASE_REPOSITORY_ID" && "$HEAD_REPOSITORY_ID" == "$BASE_REPOSITORY_ID" ]]; then
+            exit 0
+          fi
+          echo "::error::Pull requests into main must come from dev in the same repository."
+          exit 1
