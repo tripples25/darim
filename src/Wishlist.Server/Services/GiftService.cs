@@ -56,6 +56,39 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         return gift.View(id, await People([gift]));
     }
 
+    public async Task Delete(Guid userId, Guid giftId, CancellationToken ct)
+    {
+        var owner = await User(userId);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var gift = await LockGift(giftId, ct);
+        if (gift.OwnerId != userId)
+            throw new RuleException("Подарок не найден.", 404);
+        if (gift.OhmywishesKey != null)
+            throw new RuleException("Это желание можно удалить в Ohmywishes.", 403);
+
+        await db.Entry(gift).Collection(g => g.Shares).LoadAsync(ct);
+        var requests = await db.Set<WishlistReservation>().Where(r => r.GiftId == giftId).ToListAsync(ct);
+        var recipients = gift.Donors().Concat(requests
+            .Where(r => r.Status is WishlistReservation.Held or WishlistReservation.Confirmed)
+            .Select(r => r.GuestId))
+            .Distinct().Where(id => id != userId);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var recipient in recipients)
+        {
+            db.Notices.Add(new()
+            {
+                UserId = recipient,
+                TelegramNextAttempt = now,
+                Text = $"🗑️ Желание «{gift.Title}» удалено. Владелец: {owner.Name}. Бронь больше не действует."
+            });
+        }
+
+        db.RemoveRange(requests);
+        db.Gifts.Remove(gift);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
     public async Task<GiftPhoto?> Photo(Guid userId, Guid giftId, Guid version, CancellationToken ct)
     {
         var membership = db.Memberships.Where(m => m.UserId == userId);
@@ -73,9 +106,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
     {
         var user = await User(id);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        // All reservation paths, including links, serialize on this row.
-        var gift = await db.Gifts.FromSqlInterpolated($"""SELECT * FROM "Gifts" WHERE "Id"={giftId} FOR UPDATE""")
-            .SingleOrDefaultAsync(ct) ?? throw new RuleException("Подарок не найден.", 404);
+        var gift = await LockGift(giftId, ct);
         await db.Entry(gift).Collection(g => g.Shares).LoadAsync(ct);
         await db.Entry(gift).Collection(g => g.Publications).LoadAsync(ct);
         var before = gift.Donors();
@@ -232,6 +263,11 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         await tx.CommitAsync(reservePath != null || cancelPath != null ? CancellationToken.None : ct);
         return View(gift, id, await People([gift]), company, false);
     }
+
+    private async Task<Gift> LockGift(Guid giftId, CancellationToken ct) =>
+        // All reservation paths, including links, serialize on this row.
+        await db.Gifts.FromSqlInterpolated($"""SELECT * FROM "Gifts" WHERE "Id"={giftId} FOR UPDATE""")
+            .SingleOrDefaultAsync(ct) ?? throw new RuleException("Подарок не найден.", 404);
 
     private string ReservationPath(Gift gift, OhmywishesConnection connection)
     {
