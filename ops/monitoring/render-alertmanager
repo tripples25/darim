@@ -1,0 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+root=/opt/darim-monitoring
+umask 077
+read -r first second extra < "$root/secrets/telegram-chats"
+[[ $first =~ ^-?[1-9][0-9]*$ && $second =~ ^-?[1-9][0-9]*$ && $first != "$second" && -z $extra ]]
+test -s "$root/secrets/telegram-token"
+install -d -m 0755 "$root/alertmanager"
+tmp=$(mktemp "$root/alertmanager/.alertmanager.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+sed -e "s/@CHAT_ONE@/$first/g" -e "s/@CHAT_TWO@/$second/g" \
+  "$root/source/ops/monitoring/alertmanager.yml.tmpl" > "$tmp"
+chgrp 65534 "$tmp"
+chmod 0640 "$tmp"
+install -m 0644 "$root/source/ops/monitoring/darim.tmpl" "$root/alertmanager/darim.tmpl"
+chgrp 65534 "$root/secrets/telegram-token"
+chmod 0640 "$root/secrets/telegram-token"
+docker run --rm --network none --user 65534:65534 \
+  -v "$root/alertmanager:/etc/alertmanager:ro" \
+  -v "$root/secrets/telegram-token:/run/secrets/telegram_token:ro" \
+  --entrypoint /bin/amtool prom/alertmanager:v0.35.0 \
+  check-config "/etc/alertmanager/${tmp##*/}"
+mv -f "$tmp" "$root/alertmanager/alertmanager.yml"

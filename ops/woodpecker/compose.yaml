@@ -32,6 +32,7 @@ services:
     volumes:
       - worker_data:/var/lib/docker
       - worker_socket:/run/ci
+      - /opt/darim-maintenance/worker-daemon.json:/etc/docker/daemon.json:ro
   agent:
     image: woodpeckerci/woodpecker-agent:v3.20.1
     pull_policy: never

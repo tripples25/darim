@@ -7,7 +7,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
       - type: bind
         source: ${DARIM_PROMETHEUS_TARGETS_FILE:-./targets.yml}

@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Expire unprotected Darim manifests while CI and deployment are locked out."""
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import time
+from urllib.request import Request, urlopen
+from urllib.error import URLError
+
+REGISTRY = "http://127.0.0.1:5000"
+REPOSITORY = "darim"
+REGISTRY_VOLUME = "xoyyi2drm5ks9osbmmry4hjb_registry-data"
+STATUS = Path("/var/lib/darim-maintenance/deployments.json")
+RECOVERY = Path("/var/lib/darim-maintenance/registry-stopped")
+DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+SHA = re.compile(r"[0-9a-f]{40}")
+ACCEPT = ", ".join(
+    f"application/{value}" for value in (
+        "vnd.oci.image.index.v1+json", "vnd.oci.image.manifest.v1+json",
+        "vnd.docker.distribution.manifest.list.v2+json",
+        "vnd.docker.distribution.manifest.v2+json",
+    )
+)
+
+
+def docker(*args, capture=False):
+    return subprocess.run(["docker", *args], check=True, text=True,
+                          stdout=subprocess.PIPE if capture else None).stdout
+
+
+def registry(path, method="GET"):
+    with urlopen(Request(REGISTRY + path, method=method, headers={"Accept": ACCEPT}),
+                 timeout=15) as response:
+        return response.headers, response.read()
+
+
+def manifest(ref):
+    headers, body = registry(f"/v2/{REPOSITORY}/manifests/{ref}")
+    digest = headers["Docker-Content-Digest"]
+    if not digest or not DIGEST.fullmatch(digest):
+        raise RuntimeError("Registry returned an invalid manifest digest")
+    return digest, json.loads(body)
+
+
+def candidates(tags, protected, cutoff):
+    """All aliases of a removable manifest must be recognized and old."""
+    grouped = {}
+    for tag, (digest, changed) in tags.items():
+        grouped.setdefault(digest, []).append((tag, changed))
+    return {
+        digest for digest, aliases in grouped.items()
+        if digest not in protected
+        and all(SHA.fullmatch(tag) and changed < cutoff for tag, changed in aliases)
+    }
+
+
+def retained_children(roots, documents):
+    retained = set(roots)
+    pending = list(roots)
+    while pending:
+        parent = pending.pop()
+        if parent not in documents:
+            _, documents[parent] = manifest(parent)
+        for entry in documents[parent].get("manifests", []):
+            digest = entry["digest"]
+            if not DIGEST.fullmatch(digest):
+                raise RuntimeError("Invalid child digest")
+            if digest not in retained:
+                retained.add(digest)
+                pending.append(digest)
+    return retained
+
+
+def recover():
+    if RECOVERY.exists():
+        container = RECOVERY.read_text().strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", container):
+            raise RuntimeError("Invalid registry recovery record")
+        docker("start", container)
+        for attempt in range(15):
+            try:
+                registry("/v2/")
+                break
+            except (URLError, ConnectionError):
+                if attempt == 14:
+                    raise
+                time.sleep(1)
+        RECOVERY.unlink()
+
+
+def main():
+    dry_run = os.environ.get("DRY_RUN") == "1"
+    if not dry_run:
+        recover()
+    record = json.loads(STATUS.read_text()) if STATUS.exists() else {}
+    if not record.get("previous") or record.get("attempt", {}).get("status") == "running":
+        print("Registry retention skipped: need two successful releases and an idle deployer")
+        return
+    protected = {record[key]["digest"] for key in ("current", "previous")}
+    if len(protected) != 2 or not all(DIGEST.fullmatch(d) for d in protected):
+        raise RuntimeError("Invalid or duplicate protected deployment digests")
+    protected.update(
+        item["digest"] for item in [record.get("attempt", {})] if item.get("digest")
+    )
+    containers = docker("ps", "-q", "--no-trunc", "--filter",
+                        f"volume={REGISTRY_VOLUME}", capture=True).split()
+    if len(containers) != 1:
+        raise RuntimeError("Expected one running private registry")
+    container = containers[0]
+    info = json.loads(docker("inspect", container, capture=True))[0]
+    mount = next(m for m in info["Mounts"] if m["Destination"] == "/var/lib/registry")
+    tags_path = (Path(mount["Source"]) / "docker/registry/v2/repositories" /
+                 REPOSITORY / "_manifests/tags")
+    headers, body = registry(f"/v2/{REPOSITORY}/tags/list")
+    if headers.get("Link"):
+        raise RuntimeError("Unexpected paginated tag response")
+    tags, documents = {}, {}
+    for tag in json.loads(body)["tags"]:
+        if not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}", tag):
+            raise RuntimeError("Invalid registry tag")
+        digest, documents_tag = manifest(tag)
+        documents[digest] = documents_tag
+        link = tags_path / tag / "current/link"
+        if link.read_text().strip() != digest:
+            raise RuntimeError("Registry tag changed during inspection")
+        tags[tag] = digest, link.stat().st_mtime
+    if not protected.issubset(documents) or "production" not in tags:
+        raise RuntimeError("A protected registry manifest is unavailable")
+    # Correlate running containers by their exact pulled digest and also by the
+    # image revision, used when Coolify starts from a local tag.
+    running = docker("ps", "-q", capture=True).split()
+    for item in json.loads(docker("inspect", *running, capture=True)):
+        ref = item["Config"]["Image"]
+        if ref.startswith("127.0.0.1:5000/darim@"):
+            protected.add(ref.rsplit("@", 1)[1])
+        rev = (item["Config"].get("Labels") or {}).get("org.opencontainers.image.revision")
+        if rev in tags:
+            protected.add(tags[rev][0])
+    cutoff = time.time() - 72 * 3600
+    expired = candidates(tags, protected, cutoff)
+    keep = retained_children(set(documents) - expired, documents)
+    expired -= keep
+    print("Protected registry digests:", " ".join(sorted(protected)), flush=True)
+    print("Expired registry digests:", " ".join(sorted(expired)) or "(none)", flush=True)
+    pending = RECOVERY.with_name("registry-gc-pending")
+    if not expired and not pending.exists():
+        return
+    if dry_run:
+        return
+    RECOVERY.write_text(container + "\n")
+    pending.touch()
+    try:
+        for digest in sorted(expired):
+            registry(f"/v2/{REPOSITORY}/manifests/{digest}", "DELETE")
+        docker("stop", container)
+        # Keep untagged manifests in all repositories. Other repositories must
+        # retain all their manifests and layers.
+        docker("run", "--rm", "--network", "none", "--volumes-from", container,
+               "--entrypoint", "/bin/registry", info["Image"],
+               "garbage-collect", "/etc/distribution/config.yml")
+    finally:
+        recover()
+    registry("/v2/")
+    pending.unlink()
+
+
+if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:] == ["--recover"]:
+        recover()
+    else:
+        main()

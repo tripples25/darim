@@ -4,7 +4,10 @@ umask 077
 
 repository=127.0.0.1:5000/darim
 status=/data/coolify/proxy/caddy/dynamic/darim-deployment.json
+history=/var/lib/darim-maintenance/deployments.json
 uuid=6o4qlqy50orrzxavuw0c7rp5
+exec 8</var/lib/docker/volumes/darim-ci_worker_socket/_data/operations.lock
+flock -sn 8 || exit 0
 
 registry_digest() {
   curl -fsSI --max-time 5 -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
@@ -25,20 +28,27 @@ pipeline=$(docker image inspect -f '{{index .Config.Labels "io.darim.ci.pipeline
 [[ $(registry_digest "$sha") == "$digest" ]]
 
 write_status() {
-  local state=$1 current temp
-  current=$(jq -c '.current // null' "$status" 2>/dev/null || echo null)
+  local state=$1 current previous_success temp private
+  current=$(jq -c '.current // null' "$history" 2>/dev/null ||
+    jq -c '.current // null' "$status" 2>/dev/null || echo null)
+  previous_success=$(jq -c '.previous // null' "$history" 2>/dev/null || echo null)
   temp=$(mktemp "${status}.XXXXXXXX")
+  private=$(mktemp "${history}.XXXXXXXX")
   if ! jq -n --arg commit "$sha" --arg pipeline "$pipeline" --arg digest "$digest" \
     --arg state "$state" --arg time "$(date -u +%FT%TZ)" --argjson current "$current" \
+    --argjson previous "$previous_success" \
     '{attempt:{commit:$commit,pipeline:$pipeline,digest:$digest,status:$state,time:$time},
+      previous:(if $state=="success" and $current.digest!=$digest then $current else $previous end),
       current:(if $state=="success" then
         {commit:$commit,pipeline:$pipeline,digest:$digest,time:$time,
          woodpecker:("https://ci.hype-ny.ru/repos/1/pipeline/"+$pipeline),
          url:"https://wishes.hype-ny.ru"}
-      else $current end)}' > "$temp"; then
-    rm -f "$temp"
+      else $current end)}' > "$private"; then
+    rm -f "$temp" "$private"
     return 1
   fi
+  jq 'del(.previous)' "$private" > "$temp"
+  mv "$private" "$history"
   chmod 644 "$temp"
   mv "$temp" "$status"
 }

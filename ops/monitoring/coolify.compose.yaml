@@ -1,4 +1,57 @@
 services:
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.12.1
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 96m
+    cpus: 0.2
+    pids_limit: 32
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=8m']
+    command:
+      - --web.listen-address=172.28.45.1:9100
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.diskstats
+      - --collector.filesystem
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.netdev
+      - --collector.stat
+      - --collector.time
+      - --collector.uname
+      - --collector.vmstat
+      - --collector.textfile
+      - --collector.textfile.directory=/textfile
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)'
+      - '--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|kubelet|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$'
+    volumes:
+      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/lib/darim-node-exporter:/textfile:ro
+  alertmanager:
+    image: prom/alertmanager:v0.35.0
+    restart: unless-stopped
+    command: ['--config.file=/etc/alertmanager/alertmanager.yml', '--storage.path=/alertmanager', '--cluster.listen-address=']
+    volumes:
+      - /opt/darim-monitoring/alertmanager:/etc/alertmanager:ro
+      - /opt/darim-monitoring/secrets/telegram-token:/run/secrets/telegram_token:ro
+      - alertmanager-data:/alertmanager
+  blackbox:
+    image: prom/blackbox-exporter:v0.28.0
+    restart: unless-stopped
+    command: ['--config.file=/etc/blackbox.yml']
+    volumes:
+      - /opt/darim-monitoring/source/ops/monitoring/blackbox.yml:/etc/blackbox.yml:ro
+    networks: [default, darim-edge]
   prometheus:
     image: prom/prometheus:v3.16.0
     restart: unless-stopped
@@ -7,6 +60,8 @@ services:
       - --storage.tsdb.path=/prometheus
     volumes:
       - /opt/darim-monitoring/source/ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/darim-monitoring/source/ops/monitoring/host.rules.yml:/etc/prometheus/host.rules.yml:ro
+      - /opt/darim-monitoring/source/ops/monitoring/host-metrics.yml:/etc/prometheus/host-metrics.yml:ro
       - /opt/darim-monitoring/targets.yml:/etc/prometheus/targets.yml:ro
       - /opt/darim-monitoring/secrets/scrape-token:/run/secrets/scrape_token:ro
       - prometheus-data:/prometheus
@@ -35,3 +90,4 @@ networks:
 volumes:
   prometheus-data:
   grafana-data:
+  alertmanager-data:

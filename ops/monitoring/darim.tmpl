@@ -1,0 +1,8 @@
+{{ define "darim.message" -}}
+{{ if eq .Status "resolved" }}🟢 Восстановлено{{ else }}{{ if eq .CommonLabels.severity "critical" }}🔴 Критично{{ else }}🟠 Предупреждение{{ end }}{{ end }} · {{ .GroupLabels.host }}
+{{ range .Alerts -}}
+{{ .Annotations.summary }}{{ if eq .Status "firing" }}
+{{ .Annotations.detail }}{{ end }}
+{{ end -}}
+https://grafana.hype-ny.ru/
+{{ end }}
