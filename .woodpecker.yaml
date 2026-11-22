@@ -5,6 +5,8 @@ when:
 
 steps:
   - name: tests-and-build
+    # Manual builds can set DARIM_SKIP_TESTS=true. A main release can opt in via
+    # a standalone [darim skip tests] line in its commit message.
     image: docker:27-cli
     volumes:
       - /run/ci/docker.sock:/var/run/docker.sock
