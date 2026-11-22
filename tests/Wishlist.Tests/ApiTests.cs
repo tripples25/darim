@@ -8,6 +8,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
@@ -383,6 +384,107 @@ public class ApiTests(PostgresFixture db) {
   Bearer(client,seed.donor);
   Assert.Empty((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
   (await client.PostAsJsonAsync($"{giftPath}/actions",new GiftActionInput("reserve"))).EnsureSuccessStatusCode();
+ }
+
+ [Theory]
+ [InlineData("solo")]
+ [InlineData("split")]
+ [InlineData("held")]
+ [InlineData("archived")]
+ public async Task OwnerDeletesWishAndNotifiesOnlyCurrentReservationHolders(string state)
+ {
+  var seed = await Seed();
+  var guest = new AppUser { Name = "Гость", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+  var waiting = new AppUser { Name = "В очереди", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+  var former = new AppUser { Name = "Бывший даритель", TelegramId = Random.Shared.NextInt64(1, long.MaxValue) };
+  var expected = new List<Guid>();
+  var version = Guid.NewGuid();
+  await using (var ctx = new AppDb(db.Options))
+  {
+   var wish = await ctx.Gifts.SingleAsync(x => x.Id == seed.gift);
+   wish.PhotoVersion = version;
+   ctx.GiftPhotos.Add(new() { GiftId = wish.Id, Data = [1], ContentType = "image/png" });
+   ctx.Users.AddRange(guest, waiting, former);
+   var link = new WishlistLink { OwnerId = seed.owner.Id, TokenHash = Guid.NewGuid().ToString("N") };
+   ctx.Add(link);
+   var now = DateTimeOffset.UtcNow;
+   void Request(AppUser user, string status) => ctx.Add(new WishlistReservation
+   {
+    LinkId = link.Id, GiftId = wish.Id, GuestId = user.Id, Status = status,
+    Created = now, Due = now.AddHours(2)
+   });
+   Request(former, WishlistReservation.Closed);
+   if (state != "archived") Request(waiting, WishlistReservation.Waiting);
+   if (state == "solo")
+   {
+    wish.Act(seed.donor.Id, new("reserve"), 2, true);
+    Request(seed.donor, WishlistReservation.Confirmed);
+    expected.Add(seed.donor.Id);
+   }
+   if (state == "split")
+   {
+    wish.Act(seed.donor.Id, new("split", CompanyId: seed.owner.CompanyId), 2, true);
+    wish.Act(guest.Id, new("join"), 2, true);
+    expected.AddRange([seed.donor.Id, guest.Id]);
+   }
+   if (state == "held")
+   {
+    Request(guest, WishlistReservation.Held);
+    expected.Add(guest.Id);
+   }
+   if (state == "archived")
+   {
+    wish.Act(former.Id, new("reserve"), 2, true);
+    wish.Archive(seed.owner.Id);
+   }
+   await ctx.SaveChangesAsync();
+  }
+
+  using var app = Factory();
+  using var client = app.CreateClient();
+  var path = $"/api/gifts/{seed.gift}";
+  Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync(path)).StatusCode);
+  Bearer(client, seed.donor);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync(path)).StatusCode);
+  Bearer(client, seed.owner);
+  Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(path)).StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync(path)).StatusCode);
+  Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{path}/photo/{version}")).StatusCode);
+  Assert.DoesNotContain((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/mine"))!, x => x.Id == seed.gift);
+  Bearer(client, seed.donor);
+  Assert.DoesNotContain((await client.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!, x => x.Id == seed.gift);
+
+  await using var saved = new AppDb(db.Options);
+  Assert.False(await saved.Gifts.AnyAsync(x => x.Id == seed.gift));
+  Assert.False(await saved.Shares.AnyAsync(x => x.GiftId == seed.gift));
+  Assert.False(await saved.GiftPhotos.AnyAsync(x => x.GiftId == seed.gift));
+  Assert.False(await saved.Set<WishlistReservation>().AnyAsync(x => x.GiftId == seed.gift));
+  var people = new[] { seed.owner.Id, seed.donor.Id, guest.Id, waiting.Id, former.Id };
+  var notices = await saved.Notices.Where(x => people.Contains(x.UserId)).ToListAsync();
+  Assert.Equal(expected.Order(), notices.Select(x => x.UserId).Order());
+  Assert.All(notices, notice =>
+  {
+   Assert.Contains("Сюрприз", notice.Text);
+   Assert.Contains(seed.owner.Name, notice.Text);
+   Assert.Contains("Бронь больше не действует", notice.Text);
+   Assert.NotNull(notice.TelegramNextAttempt);
+   Assert.Null(notice.GiftId);
+  });
+ }
+
+ [Fact]
+ public async Task OwnerCannotDeleteImportedWish()
+ {
+  var seed = await Seed();
+  await using var ctx = new AppDb(db.Options);
+  var wish = await ctx.Gifts.SingleAsync(x => x.Id == seed.gift);
+  wish.OhmywishesKey = "imported";
+  await ctx.SaveChangesAsync();
+  using var app = Factory();
+  using var client = app.CreateClient();
+  Bearer(client, seed.owner);
+  Assert.Equal(HttpStatusCode.Forbidden, (await client.DeleteAsync($"/api/gifts/{seed.gift}")).StatusCode);
+  Assert.True(await ctx.Gifts.AnyAsync(x => x.Id == seed.gift));
  }
 
  [Fact]
