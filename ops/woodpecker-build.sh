@@ -27,8 +27,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
-if [ "${CI_PIPELINE_EVENT:-}" = manual ] && [ "${DARIM_SKIP_TESTS:-}" = true ]; then
-  echo 'Manual build: skipping test suites (DARIM_SKIP_TESTS=true).'
+if { [ "${CI_PIPELINE_EVENT:-}" = manual ] && [ "${DARIM_SKIP_TESTS:-}" = true ]; } ||
+  { [ "${CI_PIPELINE_EVENT:-}" = push ] && [ "${CI_COMMIT_BRANCH:-}" = main ] &&
+    git log -1 --format=%B HEAD | grep -Fxq '[darim skip tests]'; }; then
+  echo 'Explicit opt-in: skipping test suites. Runtime migration and health checks still apply.'
 else
   docker build -f ops/Dockerfile.ci -t darim-ci-tools:dotnet10 .
   # Host networking refers to the isolated CI daemon, not the VPS host.
