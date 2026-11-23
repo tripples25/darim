@@ -100,6 +100,9 @@ namespace Wishlist.Server.Data.Migrations
                         .HasPrecision(12, 2)
                         .HasColumnType("numeric(12,2)");
 
+                    b.Property<string>("SelectedVariantJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<int>("Slots")
                         .HasColumnType("integer");
 
@@ -116,6 +119,12 @@ namespace Wishlist.Server.Data.Migrations
 
                     b.Property<string>("Url")
                         .HasColumnType("text");
+
+                    b.Property<string>("VariantsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("VariantsVersion")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -446,6 +455,9 @@ namespace Wishlist.Server.Data.Migrations
 
                     b.Property<DateTimeOffset?>("Notified")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SelectedVariantJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<long>("Sequence")
                         .ValueGeneratedOnAdd()

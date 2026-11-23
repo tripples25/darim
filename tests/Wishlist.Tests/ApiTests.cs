@@ -282,6 +282,59 @@ public class ApiTests(PostgresFixture db) {
   Assert.Empty((await owner.GetFromJsonAsync<NoticeDto[]>("/api/notices"))!);
  }
 
+ [Fact]
+ public async Task GuestReservationKeepsSelectedVariantAfterOwnerRemovesIt()
+ {
+  var seed = await Seed();
+  var clock = new TestClock(DateTimeOffset.UtcNow);
+  using var app = Factory().WithWebHostBuilder(builder =>
+   builder.ConfigureServices(services => services.AddSingleton<TimeProvider>(clock)));
+  using var owner = app.CreateClient();
+  using var guest = app.CreateClient();
+  using var publicClient = app.CreateClient();
+  Bearer(owner, seed.owner);
+  Bearer(guest, seed.donor);
+  var input = new GiftWriteInput("Mouse", Visibility: new(false, [seed.owner.CompanyId!.Value]),
+   Variants: [new(null, "G305", "https://example.com/mouse", 3500), new(null, "Basilisk")]);
+  using var created = await owner.PostAsJsonAsync("/api/gifts", input);
+  created.EnsureSuccessStatusCode();
+  var gift = (await created.Content.ReadFromJsonAsync<GiftDto>())!;
+  var chosen = gift.Variants![0];
+  using var issued = await owner.PostAsJsonAsync("/api/wishlist-links", new WishlistLinkInput(seed.owner.CompanyId));
+  issued.EnsureSuccessStatusCode();
+  var link = (await issued.Content.ReadFromJsonAsync<WishlistLinkCreated>())!;
+  publicClient.DefaultRequestHeaders.Authorization = new("Wishlist", link.Token);
+  const string publicPath = "/api/public/wishlist";
+  var path = $"/api/wishlist-links/gifts/{gift.Id}/request";
+
+  using var stale = await guest.PostAsJsonAsync(path,
+   new WishlistRequestInput(Token: link.Token, VariantId: chosen.Id, VariantsVersion: Guid.NewGuid()));
+  Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+  using var submitted = await guest.PostAsJsonAsync(path,
+   new WishlistRequestInput(Token: link.Token, VariantId: chosen.Id, VariantsVersion: gift.VariantsVersion));
+  Assert.Equal(HttpStatusCode.NoContent, submitted.StatusCode);
+
+  using var edited = await owner.PutAsJsonAsync($"/api/gifts/{gift.Id}",
+   input with { Variants = [new(gift.Variants[1].Id, "Basilisk")] });
+  edited.EnsureSuccessStatusCode();
+  var before = await publicClient.GetStringAsync(publicPath);
+  Assert.DoesNotContain("G305", before);
+
+  clock.Advance(TimeSpan.FromHours(2));
+  await using (var scope = app.Services.CreateAsyncScope())
+   await scope.ServiceProvider.GetRequiredService<WishlistLinks>().RunDue(default);
+
+  var request = Assert.Single((await guest.GetFromJsonAsync<WishlistRequestDto[]>("/api/wishlist-requests"))!);
+  Assert.True(request.Confirmed);
+  Assert.Equal(chosen, request.SelectedVariant);
+  var reservation = Assert.Single((await guest.GetFromJsonAsync<GiftDto[]>("/api/gifts/giving"))!);
+  Assert.Equal(chosen, reservation.SelectedVariant);
+  Assert.Equal(before, await publicClient.GetStringAsync(publicPath));
+  var mine = Assert.Single((await owner.GetFromJsonAsync<GiftDto[]>("/api/gifts/mine"))!, item => item.Id == gift.Id);
+  Assert.Null(mine.Participation);
+  Assert.Null(mine.SelectedVariant);
+ }
+
  sealed class TestClock(DateTimeOffset utcNow) : TimeProvider
  {
   private long ticks = utcNow.UtcTicks;

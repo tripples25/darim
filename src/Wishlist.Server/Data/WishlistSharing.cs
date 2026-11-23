@@ -30,6 +30,7 @@ public sealed class WishlistReservation
     public string Status { get; set; } = Waiting;
     public DateTimeOffset Due { get; set; }
     public bool ShareUsername { get; set; }
+    public string? SelectedVariantJson { get; set; }
     public Guid? InterestRecipientId { get; set; }
     public DateTimeOffset? Notified { get; set; }
 }
@@ -54,6 +55,7 @@ public static class WishlistSharingModel
         });
         request.Property(x => x.Sequence).UseIdentityByDefaultColumn();
         request.Property(x => x.Status).HasMaxLength(12);
+        request.Property(x => x.SelectedVariantJson).HasColumnType("jsonb");
         request.HasIndex(x => new { x.Status, x.Due });
         request.HasIndex(x => new { x.GiftId, x.Sequence });
         request.HasIndex(x => new { x.LinkId, x.Status });

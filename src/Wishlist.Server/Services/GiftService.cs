@@ -306,7 +306,7 @@ public class GiftService(AppDb db, OhmywishesOptions? options = null, WishlistLi
         if (synchronized && gift.Mode == "free" && gift.OhmywishesOccupied)
             return dto with { Participation = new("external", false, 0, 0, false, false, null) };
         if (held || company != null && gift.Mode == "split" && gift.CompanyId != company)
-            return dto with { Participation = new("occupied", gift.Bought, 0, 0, false, false, null), Original = null };
+            return dto with { Participation = new("occupied", gift.Bought, 0, 0, false, false, null), Original = null, SelectedVariant = null };
         return dto;
     }
 
