@@ -38,10 +38,13 @@ public partial class Gift
             if (url != null && (url.Length > 2048 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
                 uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo)))
                 throw new RuleException("Для варианта нужна ссылка http или https до 2048 символов.", 400);
+            var description = string.IsNullOrWhiteSpace(inputVariant.Description) ? null : inputVariant.Description.Trim();
+            if (description?.Length > 2000)
+                throw new RuleException("Описание варианта должно быть не длиннее 2000 символов.", 400);
             var id = inputVariant.Id ?? Guid.NewGuid();
             if ((inputVariant.Id != null && !known.Contains(id)) || !used.Add(id))
                 throw new RuleException("Список вариантов изменился. Откройте редактор снова.");
-            return new GiftVariantDto(id, inputVariant.Title.Trim(), url, inputVariant.Price);
+            return new GiftVariantDto(id, inputVariant.Title.Trim(), url, inputVariant.Price, description);
         }).ToArray();
 
         if (current.SequenceEqual(next)) return;

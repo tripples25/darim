@@ -30,16 +30,18 @@ public class GiftVariantTests
         var donor = Guid.NewGuid();
         var participant = Guid.NewGuid();
         var gift = Gift.New(null, owner, new GiftWriteInput("Mouse",
-            Variants: [new(null, "G305", "https://example.com/mouse", 3500)]));
+            Variants: [new(null, "G305", "https://example.com/mouse", 3500, " Для поездок ")]));
         var variant = Assert.Single(gift.Variants);
         var revision = gift.VariantsVersion;
         gift.Act(donor, new("split", VariantId: variant.Id, VariantsVersion: revision), 2, true);
-        gift.Edit(owner, new GiftWriteInput("Mouse", Variants: [new(variant.Id, "G305", Price: 4000)]));
+        gift.Edit(owner, new GiftWriteInput("Mouse", Variants: [new(variant.Id, "G305", Price: 4000, Description: "Для офиса")]));
         gift.Act(participant, new("join"), 2, true);
         gift.Act(donor, new("transfer", UserId: participant), 2, true);
         var people = new[] { owner, donor, participant }.ToDictionary(id => id, id => new PersonDto(id, "Person"));
         Assert.Equal(3500, gift.View(participant, people).SelectedVariant?.Price);
+        Assert.Equal("Для поездок", gift.View(participant, people).SelectedVariant?.Description);
         Assert.Null(gift.View(owner, people).SelectedVariant);
+        Assert.Equal("Для офиса", Assert.Single(gift.View(owner, people).Variants!).Description);
         Assert.Equal(4000, Assert.Single(gift.View(owner, people).Variants!).Price);
         gift.Act(donor, new("leave"), 2, true);
         gift.Act(participant, new("cancel"), 2, true);
