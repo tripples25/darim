@@ -36,6 +36,8 @@ public class AppDb(DbContextOptions<AppDb> options):DbContext(options) {
   b.Entity<GiftPublication>().HasOne<Company>().WithMany().HasForeignKey(x=>x.CompanyId).OnDelete(DeleteBehavior.Cascade);
   b.Entity<Gift>().HasMany(x=>x.Publications).WithOne().HasForeignKey(x=>x.GiftId).OnDelete(DeleteBehavior.Cascade);
   b.Entity<Gift>().Ignore(x=>x.Details);b.Entity<Gift>().Property(x=>x.Title).HasMaxLength(160);b.Entity<Gift>().Property(x=>x.Price).HasPrecision(12,2);
+  b.Entity<Gift>().Property(x => x.VariantsJson).HasColumnType("jsonb");
+  b.Entity<Gift>().Property(x => x.SelectedVariantJson).HasColumnType("jsonb");
   b.Entity<Gift>().HasIndex(x=>new{x.CompanyId,x.OwnerId});b.Entity<Gift>().HasOne<Company>().WithMany().HasForeignKey(x=>x.CompanyId).OnDelete(DeleteBehavior.Restrict);
   b.Entity<Gift>().HasIndex(x=>new{x.OwnerId,x.OhmywishesKey}).IsUnique();
   b.Entity<GiftPhoto>().HasKey(x=>x.GiftId);

@@ -108,6 +108,33 @@ public class PostgresTests(PostgresFixture fixture) {
  [Fact] public async Task UnlimitedInviteCanBeUsedAndRotationInvalidatesOldLink(){var u=await InviteUsers();string oldToken,newToken;await using(var db=new AppDb(fixture.Options)){var svc=new AccountService(db);oldToken=(await svc.Invite(u.owner,null)).Token;newToken=(await svc.Invite(u.owner,null)).Token;}Assert.False(await JoinInvite(u.a,oldToken));Assert.True(await JoinInvite(u.a,newToken));Assert.True(await JoinInvite(u.b,newToken));Assert.True(await JoinInvite(u.c,newToken));}
  [Theory][InlineData(0)][InlineData(-1)][InlineData(101)] public async Task InvalidInviteLimitIsRejected(int limit){var u=await InviteUsers();await using var db=new AppDb(fixture.Options);await Assert.ThrowsAsync<RuleException>(()=>new AccountService(db).Invite(u.owner,limit));}
  [Fact] public async Task ConcurrentSoloReservationsHaveExactlyOneWinner(){var s=await Setup();var results=await Task.WhenAll(Try(s.a,s.gift,"reserve"),Try(s.b,s.gift,"reserve"));Assert.Single(results,x=>x);}
+ [Fact]
+ public async Task ConcurrentReservationsForDifferentVariantsHaveOneWinner()
+ {
+  var (owner, alice, bob, _, _) = await Setup();
+  await using var db = new AppDb(fixture.Options);
+  var gift = await new GiftService(db).Create(owner, new GiftWriteInput("Mouse",
+   Variants: [new(null, "G305"), new(null, "Basilisk")]));
+
+  var winners = await Task.WhenAll(Reserve(alice, gift.Variants![0]), Reserve(bob, gift.Variants[1]));
+  Assert.Single(winners, won => won);
+
+  async Task<bool> Reserve(Guid donor, GiftVariantDto variant)
+  {
+   await using var context = new AppDb(fixture.Options);
+   try
+   {
+    var result = await new GiftService(context).Change(donor, gift.Id,
+     action: new("reserve", VariantId: variant.Id, VariantsVersion: gift.VariantsVersion));
+    Assert.Equal(variant, result.SelectedVariant);
+    return true;
+   }
+   catch (RuleException error) when (error.Status == 409)
+   {
+    return false;
+   }
+  }
+ }
  [Fact] public async Task OpenSplitAcceptsConcurrentParticipants(){var s=await Setup();await Try(s.a,s.gift,"split",2);var results=await Task.WhenAll(Try(s.b,s.gift,"join"),Try(s.c,s.gift,"join"));Assert.All(results,Assert.True);await using var db=new AppDb(fixture.Options);Assert.Equal(3,await db.Shares.CountAsync(x=>x.GiftId==s.gift));}
  [Fact] public async Task ConcurrentSoloAndSplitAreMutuallyExclusive(){var s=await Setup();var r=await Task.WhenAll(Try(s.a,s.gift,"reserve"),Try(s.b,s.gift,"split",2));Assert.Single(r,x=>x);}
  [Fact] public async Task ForeignCompanyCannotReadOrMutateGift(){var s=await Setup();await using var db=new AppDb(fixture.Options);var company=new Company{Name="Другие",InviteHash=Guid.NewGuid().ToString()};db.Companies.Add(company);await db.SaveChangesAsync();var u=new AppUser{Name="Чужой",CompanyId=company.Id,TelegramId=Random.Shared.NextInt64(1,long.MaxValue)};db.Users.Add(u);db.Memberships.Add(new(){UserId=u.Id,CompanyId=company.Id});await db.SaveChangesAsync();var svc=new GiftService(db);Assert.Empty(await svc.List(u.Id));var ex=await Assert.ThrowsAsync<RuleException>(()=>svc.Change(u.Id,s.gift,action:new("reserve")));Assert.Equal(404,ex.Status);}

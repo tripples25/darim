@@ -11,7 +11,7 @@ public class GiftShare
  public string? OriginalJson { get; set; }
 }
 public class GiftPublication { public Guid GiftId { get; set; } public Guid CompanyId { get; set; } }
-public class Gift {
+public partial class Gift {
  public Guid Id {get;set;} = Guid.NewGuid(); public Guid? CompanyId {get;set;} public Guid OwnerId {get;set;}
  public bool AllCompanies {get;set;}
  public bool Unlimited {get;set;}
@@ -47,7 +47,9 @@ public class Gift {
   Require((input.Comment?.Length??0)<=2000 && (input.Url?.Length??0)<=2048,"Слишком длинное описание или ссылка.",400);
   Require(!string.IsNullOrWhiteSpace(input.Occasion) && input.Occasion.Length<=80,"Укажите один повод длиной до 80 символов.",400);
   if(!string.IsNullOrWhiteSpace(input.Url)) Require(Uri.TryCreate(input.Url,UriKind.Absolute,out var uri) && uri.Scheme is "http" or "https" && string.IsNullOrEmpty(uri.UserInfo),"Нужна ссылка http или https.",400);
+  if(input is GiftWriteInput write) EditVariants(write);
   Title=input.Title.Trim();Url=string.IsNullOrWhiteSpace(input.Url)?null:input.Url.Trim();Price=input.Price;
+  if (VariantsVersion != null) { Url = null; Price = null; }
   Comment=input.Comment?.Trim();Occasion=input.Occasion.Trim();OccasionDate=input.OccasionDate;
  }
  public void Archive(Guid userId) {Require(userId==OwnerId,"Архивировать может только владелец.",403);Archived=true;Release();Bought=false;}
@@ -57,15 +59,16 @@ public class Gift {
   Require(!Archived||input.Action=="cancel","Желание уже в архиве.");Require(!Bought,"Подарок уже куплен.");
   if (Unlimited)
   {
+   if (input.Action == "reserve") SelectVariant(input.VariantId, input.VariantsVersion);
    ActOnUnlimitedGift(userId, input.Action);
    return;
   }
   switch(input.Action) {
-   case "reserve": Require(Mode=="free","Подарок уже занят.");Snapshot();Mode="solo";DonorId=userId;break;
+   case "reserve": Reserve(userId, SelectVariant(input.VariantId, input.VariantsVersion));break;
    case "split":
     Require(Mode=="free","Подарок уже занят.");Require(hasContact,"Укажите контакт в профиле перед участием в распиле.",400);
     Require(otherMembers>=2,"Для распила нужны хотя бы два дарителя.",400);
-    Snapshot();Mode="split";CompanyId=input.CompanyId;Slots=2;SplitOpen=true;DonorId=userId;Shares.Add(new(){GiftId=Id,UserId=userId,JoinOrder=1});break;
+    Snapshot(SelectVariant(input.VariantId, input.VariantsVersion));Mode="split";CompanyId=input.CompanyId;Slots=2;SplitOpen=true;DonorId=userId;Shares.Add(new(){GiftId=Id,UserId=userId,JoinOrder=1});break;
    case "join":
     Require(Mode=="split" && SplitOpen,"Сбор участников завершён.");Require(hasContact,"Укажите контакт в профиле.",400);
     Require(Shares.All(x=>x.UserId!=userId),"Вы уже участвуете.");Shares.Add(new(){GiftId=Id,UserId=userId,JoinOrder=Shares.Max(x=>x.JoinOrder)+1});break;
@@ -88,7 +91,7 @@ public class Gift {
    default: throw new RuleException("Неизвестное действие.",400);
   }
  }
- private void Release() {Mode="free";CompanyId=null;DonorId=null;Slots=0;SplitOpen=false;Shares.Clear();OriginalJson=null;}
+ private void Release() {Mode="free";CompanyId=null;DonorId=null;Slots=0;SplitOpen=false;Shares.Clear();OriginalJson=null;SelectedVariantJson=null;}
  private void LeaveSplit(Guid userId)
  {
   Shares.RemoveAll(x=>x.UserId==userId);
@@ -117,12 +120,17 @@ public class Gift {
   }
  }
 
- void Snapshot() => OriginalJson=JsonSerializer.Serialize(Details);
+ void Snapshot(GiftVariantDto? variant)
+ {
+  OriginalJson = JsonSerializer.Serialize(Details);
+  SelectedVariantJson = variant == null ? null : JsonSerializer.Serialize(variant);
+ }
  public GiftDto View(Guid viewer, IReadOnlyDictionary<Guid,PersonDto> people) {
   var owner = people[OwnerId] with { Contact = null, AvatarUrl = null };
   if(viewer==OwnerId)return new(Id,owner,Details,Archived,null,FromOhmywishes:OhmywishesKey!=null,
    PhotoVersion:PhotoVersion,
-   Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()), Unlimited:Unlimited);
+   Visibility:new(AllCompanies,Publications.Select(x=>x.CompanyId).ToArray()), Unlimited:Unlimited,
+   Variants: VariantsVersion == null ? null : Variants, VariantsVersion: VariantsVersion);
   if (Unlimited)
   {
    var reservation = Shares.SingleOrDefault(share => share.UserId == viewer);
@@ -137,7 +145,9 @@ public class Gift {
   var state=new ParticipationDto(Mode,Bought,Slots,Shares.Count,mine,DonorId==viewer,
    Mode=="split" && mine ? Shares.OrderBy(x=>x.JoinOrder).ThenBy(x=>x.UserId).Select(x=>people[x.UserId]).ToArray():null,Mode=="split" && mine?DonorId:null,Mode=="split" && SplitOpen);
   return new(Id,owner,Details,Archived,state,mine && OriginalJson!=null?JsonSerializer.Deserialize<GiftInput>(OriginalJson):null,
-   OhmywishesKey!=null,PhotoVersion:PhotoVersion);
+   OhmywishesKey!=null,PhotoVersion:PhotoVersion, Variants: VariantsVersion == null ? null : Variants,
+   VariantsVersion: VariantsVersion, SelectedVariant: mine || Mode == "split" && SplitOpen && !Bought
+    ? ReadVariant(SelectedVariantJson) : null);
  }
  static void Require(bool condition,string message,int status=409) {if(!condition)throw new RuleException(message,status);}
  public Guid[] Donors() => Shares.Select(x=>x.UserId).Concat(DonorId is {} d ? [d] : Array.Empty<Guid>()).Distinct().ToArray();

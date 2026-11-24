@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Wishlist.Contracts;
@@ -86,7 +87,8 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
                            select user.Name).SingleOrDefaultAsync(ct) ?? throw MissingLink();
         var gifts = await VisibleGifts(link).AsNoTracking().OrderByDescending(x => x.Created).ToArrayAsync(ct);
         var managedOwners = await ManagedWebOwners().Where(id => link.Any(x => x.OwnerId == id)).ToArrayAsync(ct);
-        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, null, x.PhotoVersion, !x.Unlimited && (x.OhmywishesKey == null || !managedOwners.Contains(x.OwnerId)))).ToArray());
+        return new(owner, gifts.Select(x => new PublicWishDto(x.Id, x.Details, null, x.PhotoVersion, !x.Unlimited && (x.OhmywishesKey == null || !managedOwners.Contains(x.OwnerId)),
+            x.VariantsVersion == null ? null : x.Variants, x.VariantsVersion)).ToArray());
     }
 
     public async Task<GiftPhoto> Photo(string token, Guid giftId, Guid version, CancellationToken ct)
@@ -119,12 +121,14 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
         {
             // Save any just-closed request before inserting another live request for the same guest.
             if (prior.Count > 0) await db.SaveChangesAsync(ct);
+            var variant = gift.SelectVariant(input.VariantId, input.VariantsVersion);
             var request = new WishlistReservation
             {
                 LinkId = link.Id,
                 GiftId = giftId,
                 GuestId = guestId,
                 ShareUsername = input.ShareUsername,
+                SelectedVariantJson = variant == null ? null : JsonSerializer.Serialize(variant),
                 Created = now,
                 Due = now.AddHours(2)
             };
@@ -141,7 +145,8 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
                join gift in db.Gifts on request.GiftId equals gift.Id
                where request.GuestId == guestId && request.Status != Closed
                orderby request.Sequence descending
-               select new WishlistRequestDto(request.Id, gift.Id, gift.Title, request.Created, request.Status == Confirmed))
+               select new WishlistRequestDto(request.Id, gift.Id, gift.Title, request.Created, request.Status == Confirmed,
+                   Gift.ReadVariant(request.SelectedVariantJson)))
             .ToArrayAsync(ct);
 
     public async Task Withdraw(Guid guestId, Guid requestId, CancellationToken ct)
@@ -236,7 +241,7 @@ public sealed class WishlistLinks(AppDb db, OhmywishesOptions? options = null, T
             pending.FirstOrDefault(x => x.Status == Waiting);
         if (candidate != null && candidate.Due <= now)
         {
-            gift.Act(candidate.GuestId, new("reserve"), 0, false);
+            gift.ConfirmGuestReservation(candidate.GuestId, Gift.ReadVariant(candidate.SelectedVariantJson));
             candidate.Status = Confirmed;
             AddNotice(candidate.GuestId, $"Вы выбрали подарок «{gift.Title}». Бронь подтверждена.");
             ResolveOccupied(gift, pending, now);

@@ -5,16 +5,19 @@ public record MeDto(PersonDto User, CompanyDto? Company, CompanyDto[]? Companies
 public record GiftVisibility(bool AllCompanies, Guid[] CompanyIds);
 public record GiftInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null, string Occasion = "Без повода", DateOnly? OccasionDate = null);
 public record ParticipationDto(string Mode, bool Bought, int Slots, int Taken, bool IsMine, bool IsCoordinator, PersonDto[]? Participants, Guid? CoordinatorId = null, bool Open = false);
+public record GiftVariantInput(Guid? Id, string Title, string? Url = null, decimal? Price = null, string? Description = null);
+public record GiftVariantDto(Guid Id, string Title, string? Url, decimal? Price, string? Description = null);
 public record GiftWriteInput(string Title, string? Url = null, decimal? Price = null, string? Comment = null,
     string Occasion = "Без повода", DateOnly? OccasionDate = null, byte[]? Photo = null, bool RemovePhoto = false,
-    GiftVisibility? Visibility = null, bool Unlimited = false)
+    GiftVisibility? Visibility = null, bool Unlimited = false, GiftVariantInput[]? Variants = null)
     : GiftInput(Title, Url, Price, Comment, Occasion, OccasionDate)
 {
     public const int MaxPhotoMegabytes = 15;
     public const int MaxPhotoBytes = MaxPhotoMegabytes * 1024 * 1024;
 }
 public record GiftDto(Guid Id, PersonDto Owner, GiftInput Details, bool Archived, ParticipationDto? Participation, GiftInput? Original = null,
-    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool Unlimited = false);
+    bool FromOhmywishes = false, string? PhotoUrl = null, Guid? PhotoVersion = null, GiftVisibility? Visibility = null, bool Unlimited = false,
+    GiftVariantDto[]? Variants = null, Guid? VariantsVersion = null, GiftVariantDto? SelectedVariant = null);
 public record OhmywishesStatusDto(bool Enabled, bool Connected, bool Reconnect, string? ListId, string? ListTitle, DateTimeOffset? LastSuccess, bool Stale, bool WebApiEnabled = false, bool WebApiConnected = false, bool ManualSyncSupported = false);
 public record OhmywishesListDto(string Id, string Title);
 public record OhmywishesSelection(string ListId, Guid? CompanyId = null);
@@ -27,7 +30,8 @@ public record InviteOptions(int? MaxUses, Guid? CompanyId = null);
 public record JoinCompanyInput(string Token);
 public record CompanyJoinDto(Guid CompanyId);
 public record ProfileInput(string Name, string? Contact);
-public record GiftActionInput(string Action, int? Slots = null, Guid? UserId = null, Guid? CompanyId = null);
+public record GiftActionInput(string Action, int? Slots = null, Guid? UserId = null, Guid? CompanyId = null,
+    Guid? VariantId = null, Guid? VariantsVersion = null);
 public record MiniLoginInput(string InitData);
 public record MiniSessionDto(string Token, DateTimeOffset Expires);
 public record CsrfDto(string Token);
